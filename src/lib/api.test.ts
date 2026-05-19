@@ -176,6 +176,45 @@ describe('callImageApi', () => {
     expect((init as RequestInit).cache).toBe('no-store')
   })
 
+  it('uses the local OpenAI SDK proxy for OpenAI image generation in the dev server', async () => {
+    vi.stubEnv('VITEST', '')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://aitechflux.com/v1',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '1152x2048', quality: 'high' },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/openai-sdk-proxy/images/generations',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'Content-Type': 'application/json',
+      'x-openai-base-url': 'https://aitechflux.com/v1',
+    })
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      model: 'gpt-image-2',
+      prompt: 'prompt',
+      size: '1152x2048',
+      quality: 'high',
+      output_format: 'png',
+    })
+  })
+
   it('ignores stored API proxy settings when the current deployment has no proxy', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'false')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({

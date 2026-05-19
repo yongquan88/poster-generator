@@ -99,10 +99,6 @@ function createResponsesImageTool(
     tool.quality = params.quality
   }
 
-  if (params.output_format !== 'png' && params.output_compression != null) {
-    tool.output_compression = params.output_compression
-  }
-
   if (maskDataUrl) {
     tool.input_image_mask = {
       image_url: maskDataUrl,
@@ -291,15 +287,11 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       formData.append('prompt', prompt)
       formData.append('size', params.size)
       formData.append('output_format', params.output_format)
-      formData.append('moderation', params.moderation)
 
       if (!profile.codexCli) {
         formData.append('quality', params.quality)
       }
 
-      if (params.output_format !== 'png' && params.output_compression != null) {
-        formData.append('output_compression', String(params.output_compression))
-      }
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
@@ -348,16 +340,12 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         prompt,
         size: params.size,
         output_format: params.output_format,
-        moderation: params.moderation,
       }
 
       if (!profile.codexCli) {
         body.quality = params.quality
       }
 
-      if (params.output_format !== 'png' && params.output_compression != null) {
-        body.output_compression = params.output_compression
-      }
       if (params.n > 1) {
         body.n = params.n
       }
@@ -365,16 +353,23 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         body.response_format = 'b64_json'
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
+      const useLocalSdkProxy = import.meta.env.DEV && !import.meta.env.VITEST && profile.provider === 'openai'
+      response = await fetch(
+        useLocalSdkProxy
+          ? '/openai-sdk-proxy/images/generations'
+          : buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy),
+        {
         method: 'POST',
         headers: {
           ...requestHeaders,
           'Content-Type': 'application/json',
+          ...(useLocalSdkProxy ? { 'x-openai-base-url': profile.baseUrl } : {}),
         },
         cache: 'no-store',
         body: JSON.stringify(body),
         signal: controller.signal,
-      })
+        },
+      )
     }
 
     if (!response.ok) {

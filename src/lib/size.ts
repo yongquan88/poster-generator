@@ -1,10 +1,9 @@
 const SIZE_PATTERN = /^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:xX×]\s*(\d+(?:\.\d+)?)\s*$/
 const SIZE_MULTIPLE = 16
-const MAX_EDGE = 3840
+const MAX_WIDTH = 3840
+const MAX_HEIGHT = 2160
 const MAX_ASPECT_RATIO = 3
-const MIN_PIXELS = 655_360
-const MAX_PIXELS = 8_294_400
 
 export type SizeTier = '1K' | '2K' | '4K'
 
@@ -16,10 +15,6 @@ function floorToMultiple(value: number, multiple: number) {
   return Math.max(multiple, Math.floor(value / multiple) * multiple)
 }
 
-function ceilToMultiple(value: number, multiple: number) {
-  return Math.max(multiple, Math.ceil(value / multiple) * multiple)
-}
-
 function normalizeDimensions(width: number, height: number) {
   let normalizedWidth = roundToMultiple(width, SIZE_MULTIPLE)
   let normalizedHeight = roundToMultiple(height, SIZE_MULTIPLE)
@@ -29,28 +24,15 @@ function normalizeDimensions(width: number, height: number) {
     normalizedHeight = floorToMultiple(normalizedHeight * scale, SIZE_MULTIPLE)
   }
 
-  const scaleToFill = (scale: number) => {
-    normalizedWidth = ceilToMultiple(normalizedWidth * scale, SIZE_MULTIPLE)
-    normalizedHeight = ceilToMultiple(normalizedHeight * scale, SIZE_MULTIPLE)
-  }
-
   for (let i = 0; i < 4; i++) {
-    const maxEdge = Math.max(normalizedWidth, normalizedHeight)
-    if (maxEdge > MAX_EDGE) {
-      scaleToFit(MAX_EDGE / maxEdge)
+    if (normalizedWidth > MAX_WIDTH || normalizedHeight > MAX_HEIGHT) {
+      scaleToFit(Math.min(MAX_WIDTH / normalizedWidth, MAX_HEIGHT / normalizedHeight))
     }
 
     if (normalizedWidth / normalizedHeight > MAX_ASPECT_RATIO) {
       normalizedWidth = floorToMultiple(normalizedHeight * MAX_ASPECT_RATIO, SIZE_MULTIPLE)
     } else if (normalizedHeight / normalizedWidth > MAX_ASPECT_RATIO) {
       normalizedHeight = floorToMultiple(normalizedWidth * MAX_ASPECT_RATIO, SIZE_MULTIPLE)
-    }
-
-    const pixels = normalizedWidth * normalizedHeight
-    if (pixels > MAX_PIXELS) {
-      scaleToFit(Math.sqrt(MAX_PIXELS / pixels))
-    } else if (pixels < MIN_PIXELS) {
-      scaleToFill(Math.sqrt(MIN_PIXELS / pixels))
     }
   }
 
