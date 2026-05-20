@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from '../lib/size'
+import { POSTER_SIZE_PRESETS, calculateImageSize, normalizeImageSize, parseRatio, type SizeTier } from '../lib/size'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import ViewportTooltip from './ViewportTooltip'
 
 const TIERS: SizeTier[] = ['1K', '2K', '4K']
-const SIZE_LIMIT_TEXT = '由于模型限制，最终输出会自动规整到合法尺寸：\n宽高均为 16 的倍数，宽高比在 1:3 到 3:1 之间，最大范围为 3840×2160；超过 2560×1440 属于实验性尺寸。'
+const SIZE_LIMIT_TEXT = '由于模型限制，最终输出会自动规整到合法尺寸：\n宽高均为 16 的倍数，宽高比在 1:3 到 3:1 之间，单边最大为 3840px；超过 2560×1440 属于实验性尺寸。'
 const RATIOS = [
   { label: '1:1', value: '1:1' },
   { label: '3:2', value: '3:2' },
@@ -23,7 +23,7 @@ interface Props {
   allowAuto?: boolean
 }
 
-type Mode = 'auto' | 'ratio' | 'resolution'
+type Mode = 'auto' | 'poster' | 'ratio' | 'resolution'
 
 function parseSize(size: string) {
   const match = size.match(/^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/)
@@ -43,16 +43,26 @@ function findPresetForSize(size: string) {
   return null
 }
 
+function findPosterPresetForSize(size: string) {
+  const normalized = normalizeImageSize(size)
+  return POSTER_SIZE_PRESETS.find((preset) => normalizeImageSize(preset.size) === normalized) ?? null
+}
+
 export default function SizePickerModal({ currentSize, onSelect, onClose, allowAuto = true }: Props) {
   usePreventBackgroundScroll(true)
 
   const currentPreset = findPresetForSize(currentSize)
+  const currentPosterPreset = findPosterPresetForSize(currentSize)
   const currentParsedSize = parseSize(currentSize)
   const [mode, setMode] = useState<Mode>(() => {
     if (!currentSize || currentSize === 'auto') return allowAuto ? 'auto' : 'ratio'
+    if (currentPosterPreset) return 'poster'
     if (currentPreset) return 'ratio'
     return 'resolution'
   })
+
+  // Poster mode state
+  const [posterSize, setPosterSize] = useState(currentPosterPreset?.size ?? POSTER_SIZE_PRESETS[0].size)
 
   // Ratio mode state
   const [tier, setTier] = useState<SizeTier>(currentPreset?.tier ?? '1K')
@@ -81,6 +91,8 @@ export default function SizePickerModal({ currentSize, onSelect, onClose, allowA
 
   const previewSize = useMemo(() => {
     if (mode === 'auto') return 'auto'
+
+    if (mode === 'poster') return normalizeImageSize(posterSize)
     
     if (mode === 'ratio') {
       const size = calculateImageSize(tier, activeRatio)
@@ -97,7 +109,7 @@ export default function SizePickerModal({ currentSize, onSelect, onClose, allowA
     }
     
     return ''
-  }, [mode, tier, activeRatio, customW, customH])
+  }, [mode, posterSize, tier, activeRatio, customW, customH])
 
   const isClamped = useMemo(() => {
     if (!previewSize || previewSize === 'auto') return false
@@ -177,6 +189,12 @@ export default function SizePickerModal({ currentSize, onSelect, onClose, allowA
               </button>
             )}
             <button
+              onClick={() => setMode('poster')}
+              className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition ${mode === 'poster' ? 'bg-white text-gray-800 shadow-sm dark:bg-gray-700 dark:text-gray-100' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+            >
+              海报
+            </button>
+            <button
               onClick={() => setMode('ratio')}
               className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition ${mode === 'ratio' ? 'bg-white text-gray-800 shadow-sm dark:bg-gray-700 dark:text-gray-100' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
             >
@@ -201,6 +219,35 @@ export default function SizePickerModal({ currentSize, onSelect, onClose, allowA
                   </div>
                   <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200">自动尺寸</h4>
                   <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">不向模型传递具体的分辨率参数<br/>由模型自己决定生成尺寸</p>
+                </div>
+              </div>
+            )}
+
+            {mode === 'poster' && (
+              <div className="space-y-4 animate-fade-in">
+                <section>
+                  <div className="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">按实际印刷尺寸选择</div>
+                  <div className="grid gap-2">
+                    {POSTER_SIZE_PRESETS.map((item) => (
+                      <button
+                        key={item.size}
+                        className={`${buttonClass(posterSize === item.size)} text-left`}
+                        onClick={() => setPosterSize(item.size)}
+                      >
+                        <span className="block font-medium">{item.label}</span>
+                        <span className="mt-0.5 block font-mono text-xs opacity-70">{item.size} · {item.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <div className="rounded-xl border border-gray-200/80 bg-gray-50/80 p-3 text-xs text-gray-600 dark:border-white/[0.05] dark:bg-white/[0.02] dark:text-gray-400">
+                  <div className="flex items-start gap-2">
+                    <svg className="mt-[2px] h-4 w-4 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="leading-relaxed">这里使用适合 AI 生成的底图像素，最终印刷前仍建议超分后再排版导出。</div>
+                  </div>
                 </div>
               </div>
             )}

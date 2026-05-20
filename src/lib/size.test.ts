@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateImageSize, normalizeImageSize } from './size'
+import { POSTER_SIZE_PRESETS, calculateImageSize, normalizeImageSize } from './size'
 
 function expectOfficialSize(value: string) {
   const match = value.match(/^(\d+)x(\d+)$/)
@@ -10,7 +10,7 @@ function expectOfficialSize(value: string) {
   expect(width % 16).toBe(0)
   expect(height % 16).toBe(0)
   expect(width).toBeLessThanOrEqual(3840)
-  expect(height).toBeLessThanOrEqual(2160)
+  expect(height).toBeLessThanOrEqual(3840)
   expect(width / height).toBeLessThanOrEqual(3)
   expect(height / width).toBeLessThanOrEqual(3)
 }
@@ -26,7 +26,7 @@ describe('image size helpers', () => {
     expect(normalizeImageSize('1151x2047')).toBe('1152x2048')
   })
 
-  it('clamps custom sizes to the official 3840x2160 bounds', () => {
+  it('clamps custom sizes to the model side bounds', () => {
     expectOfficialSize(normalizeImageSize('5000x3000'))
     expectOfficialSize(normalizeImageSize('3000x5000'))
   })
@@ -38,12 +38,20 @@ describe('image size helpers', () => {
     expectOfficialSize(wide)
     expectOfficialSize(tall)
     expect(wide).toBe('1440x480')
-    expect(tall).toBe('256x768')
+    expect(tall).toBe('480x1440')
   })
 
-  it('keeps 4K ratio presets inside the official bounds', () => {
+  it('keeps 4K ratio presets inside the model bounds', () => {
     expect(calculateImageSize('4K', '16:9')).toBe('3840x2160')
-    expect(calculateImageSize('4K', '9:16')).toBe('1200x2160')
+    expect(calculateImageSize('4K', '9:16')).toBe('2160x3840')
     expectOfficialSize(calculateImageSize('4K', '9:16') ?? '')
+  })
+
+  it('includes print poster presets sized by long edge', () => {
+    expect(POSTER_SIZE_PRESETS.map((preset) => preset.size)).toEqual(['1712x3840', '1440x3840'])
+    for (const preset of POSTER_SIZE_PRESETS) {
+      expect(normalizeImageSize(preset.size)).toBe(preset.size)
+      expectOfficialSize(preset.size)
+    }
   })
 })

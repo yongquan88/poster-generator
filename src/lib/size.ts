@@ -1,8 +1,7 @@
 const SIZE_PATTERN = /^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:xX×]\s*(\d+(?:\.\d+)?)\s*$/
 const SIZE_MULTIPLE = 16
-const MAX_WIDTH = 3840
-const MAX_HEIGHT = 2160
+const MAX_SIDE = 3840
 const MAX_ASPECT_RATIO = 3
 
 export type SizeTier = '1K' | '2K' | '4K'
@@ -25,8 +24,8 @@ function normalizeDimensions(width: number, height: number) {
   }
 
   for (let i = 0; i < 4; i++) {
-    if (normalizedWidth > MAX_WIDTH || normalizedHeight > MAX_HEIGHT) {
-      scaleToFit(Math.min(MAX_WIDTH / normalizedWidth, MAX_HEIGHT / normalizedHeight))
+    if (normalizedWidth > MAX_SIDE || normalizedHeight > MAX_SIDE) {
+      scaleToFit(Math.min(MAX_SIDE / normalizedWidth, MAX_SIDE / normalizedHeight))
     }
 
     if (normalizedWidth / normalizedHeight > MAX_ASPECT_RATIO) {
@@ -161,3 +160,16 @@ export function calculateImageSize(tier: SizeTier, ratio: string) {
     : longSide
   return normalizeImageSize(`${width}x${height}`)
 }
+
+export const POSTER_SIZE_PRESETS = [
+  {
+    label: '80×180cm',
+    description: '4:9 竖版海报',
+    size: '1712x3840',
+  },
+  {
+    label: '60×160cm',
+    description: '3:8 竖版海报',
+    size: '1440x3840',
+  },
+] as const
