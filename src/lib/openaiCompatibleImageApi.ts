@@ -274,6 +274,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
   const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
   const requestHeaders = createRequestHeaders(profile)
   const paths = createOpenAICompatiblePaths(customProvider)
+  const useLocalSdkProxy = import.meta.env.DEV && !import.meta.env.VITEST && profile.provider === 'openai'
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), profile.timeout * 1000)
@@ -327,9 +328,14 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         formData.append('mask', maskBlob, 'mask.png')
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy), {
+      response = await fetch(useLocalSdkProxy
+        ? '/openai-sdk-proxy/images/edits'
+        : buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy), {
         method: 'POST',
-        headers: requestHeaders,
+        headers: {
+          ...requestHeaders,
+          ...(useLocalSdkProxy ? { 'x-openai-base-url': profile.baseUrl } : {}),
+        },
         cache: 'no-store',
         body: formData,
         signal: controller.signal,
@@ -353,7 +359,6 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         body.response_format = 'b64_json'
       }
 
-      const useLocalSdkProxy = import.meta.env.DEV && !import.meta.env.VITEST && profile.provider === 'openai'
       response = await fetch(
         useLocalSdkProxy
           ? '/openai-sdk-proxy/images/generations'

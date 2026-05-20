@@ -215,6 +215,46 @@ describe('callImageApi', () => {
     })
   })
 
+  it('uses the local OpenAI SDK proxy for OpenAI image edits in the dev server', async () => {
+    vi.stubEnv('VITEST', '')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://aitechflux.com/v1',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '1152x2048', quality: 'high' },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+    })
+
+    const editCall = fetchMock.mock.calls.find(([url]) => url === '/openai-sdk-proxy/images/edits')
+    expect(editCall).toBeTruthy()
+    const [, init] = editCall!
+    const formData = (init as RequestInit).body as FormData
+    const images = formData.getAll('image[]')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/openai-sdk-proxy/images/edits',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'x-openai-base-url': 'https://aitechflux.com/v1',
+    })
+    expect(((init as RequestInit).headers as Record<string, string>)).not.toHaveProperty('Content-Type')
+    expect(formData).toBeInstanceOf(FormData)
+    expect(images).toHaveLength(1)
+  })
+
   it('ignores stored API proxy settings when the current deployment has no proxy', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'false')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({

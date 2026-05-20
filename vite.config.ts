@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { readFileSync } from 'fs'
 import type { IncomingMessage } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
-import OpenAI from 'openai'
+import OpenAI, { toFile, type Uploadable } from 'openai'
 import { normalizeDevProxyConfig } from './src/lib/devProxy'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
@@ -29,6 +29,67 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
   })
 }
 
+function readAuthHeaders(req: IncomingMessage) {
+  const authorization = req.headers.authorization ?? ''
+  const apiKey = Array.isArray(authorization)
+    ? authorization[0]?.replace(/^Bearer\s+/i, '')
+    : authorization.replace(/^Bearer\s+/i, '')
+  const baseURLHeader = req.headers['x-openai-base-url']
+  const baseURL = Array.isArray(baseURLHeader) ? baseURLHeader[0] : baseURLHeader
+
+  if (!apiKey) throw new Error('Missing Authorization bearer token')
+  if (!baseURL) throw new Error('Missing x-openai-base-url header')
+
+  return { apiKey, baseURL }
+}
+
+function getHeaderValue(req: IncomingMessage, name: string) {
+  const value = req.headers[name.toLowerCase()]
+  return Array.isArray(value) ? value.join(', ') : value
+}
+
+function createRequestFromIncomingMessage(req: IncomingMessage) {
+  const method = req.method ?? 'GET'
+  const protocol = getHeaderValue(req, 'x-forwarded-proto') ?? 'http'
+  const host = getHeaderValue(req, 'host') ?? 'localhost'
+  const headers = new Headers()
+
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === undefined) continue
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(key, item)
+    } else {
+      headers.set(key, value)
+    }
+  }
+
+  return new Request(`${protocol}://${host}${req.url ?? '/'}`, {
+    method,
+    headers,
+    body: method === 'GET' || method === 'HEAD' ? undefined : req as unknown as BodyInit,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' })
+}
+
+function getOptionalString(formData: FormData, field: string) {
+  const value = formData.get(field)
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function getOptionalNumber(formData: FormData, field: string) {
+  const value = getOptionalString(formData, field)
+  if (!value) return undefined
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
+async function formFileToUploadable(value: FormDataEntryValue, fallbackName: string): Promise<Uploadable | null> {
+  if (typeof value === 'string') return null
+  return toFile(value, value.name || fallbackName, { type: value.type || 'application/octet-stream' })
+}
+
 function createOpenAiSdkProxyPlugin(): Plugin {
   return {
     name: 'openai-sdk-proxy',
@@ -42,16 +103,7 @@ function createOpenAiSdkProxyPlugin(): Plugin {
         }
 
         try {
-          const authorization = req.headers.authorization ?? ''
-          const apiKey = Array.isArray(authorization)
-            ? authorization[0]?.replace(/^Bearer\s+/i, '')
-            : authorization.replace(/^Bearer\s+/i, '')
-          const baseURLHeader = req.headers['x-openai-base-url']
-          const baseURL = Array.isArray(baseURLHeader) ? baseURLHeader[0] : baseURLHeader
-
-          if (!apiKey) throw new Error('Missing Authorization bearer token')
-          if (!baseURL) throw new Error('Missing x-openai-base-url header')
-
+          const { apiKey, baseURL } = readAuthHeaders(req)
           const payload = JSON.parse(await readRequestBody(req))
           const client = new OpenAI({ apiKey, baseURL })
           const result = await client.images.generate({
@@ -62,6 +114,55 @@ function createOpenAiSdkProxyPlugin(): Plugin {
             output_format: payload.output_format,
             n: payload.n,
             response_format: payload.response_format,
+          })
+
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify(result))
+        } catch (error) {
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }))
+        }
+      })
+
+      server.middlewares.use('/openai-sdk-proxy/images/edits', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ error: { message: 'Method not allowed' } }))
+          return
+        }
+
+        try {
+          const { apiKey, baseURL } = readAuthHeaders(req)
+          const formData = await createRequestFromIncomingMessage(req).formData()
+          const imageEntries = [
+            ...formData.getAll('image[]'),
+            ...formData.getAll('image'),
+          ]
+          const images = (await Promise.all(
+            imageEntries.map((entry, index) => formFileToUploadable(entry, `input-${index + 1}.png`)),
+          )).filter((entry): entry is Uploadable => Boolean(entry))
+          const mask = await formFileToUploadable(formData.get('mask') ?? '', 'mask.png')
+
+          if (!images.length) throw new Error('Missing image files')
+
+          const client = new OpenAI({ apiKey, baseURL })
+          const result = await client.images.edit({
+            model: getOptionalString(formData, 'model'),
+            prompt: getOptionalString(formData, 'prompt') ?? '',
+            image: images.length === 1 ? images[0] : images,
+            ...(mask ? { mask } : {}),
+            size: getOptionalString(formData, 'size'),
+            quality: getOptionalString(formData, 'quality') as any,
+            output_format: getOptionalString(formData, 'output_format') as any,
+            n: getOptionalNumber(formData, 'n'),
+            response_format: getOptionalString(formData, 'response_format') as any,
           })
 
           res.statusCode = 200
