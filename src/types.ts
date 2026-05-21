@@ -99,8 +99,8 @@ export interface TaskParams {
 }
 
 export const DEFAULT_PARAMS: TaskParams = {
-  size: 'auto',
-  quality: 'auto',
+  size: '1712x3840',
+  quality: 'high',
   output_format: 'png',
   output_compression: null,
   moderation: 'auto',

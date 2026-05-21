@@ -460,9 +460,7 @@ export default function InputBar() {
   const isFalProvider = activeProvider === 'fal'
   const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
-  const nLimitHintText = isFalProvider
-    ? `fal.ai 最大请求数量为 ${outputImageLimit}`
-    : `OpenAI 最大请求数量为 ${outputImageLimit}`
+  const nLimitHintText = `最大请求数量为 ${outputImageLimit}`
   const displaySize = isFalTextToImage && params.size === 'auto'
     ? DEFAULT_FAL_IMAGE_SIZE
     : normalizeImageSize(params.size) || DEFAULT_PARAMS.size
@@ -926,15 +924,15 @@ export default function InputBar() {
     const imagesHeight = imagesRef.current?.offsetHeight ?? 0
     const fixedOverhead = imagesHeight + 140
 
-    // textarea 最大高度 = 页面 40% 减去固定开销，至少保留 80px
-    const maxH = Math.max(window.innerHeight * 0.4 - fixedOverhead, 80)
+    const minH = 126
+    // textarea 最大高度 = 页面 40% 减去固定开销，至少保留默认输入高度
+    const maxH = Math.max(window.innerHeight * 0.4 - fixedOverhead, minH)
 
     // 1. 关闭过渡动画，设高度为 0 以获取真实的文本内容高度
     el.style.transition = 'none'
     el.style.height = '0'
     el.style.overflowY = 'hidden'
     const scrollH = el.scrollHeight
-    const minH = 42
     const desired = Math.max(scrollH, minH)
     const targetH = desired > maxH ? maxH : desired
 
@@ -1689,7 +1687,7 @@ export default function InputBar() {
                 syncMentionTagSelection(el)
               }}
               data-placeholder="描述你想生成的图片，可输入 @ 指定当前参考图..."
-              className="min-h-[42px] w-full whitespace-pre-wrap break-words rounded-2xl border border-gray-200/60 bg-white/50 px-4 py-3 text-sm leading-relaxed shadow-sm outline-none transition-[border-color,box-shadow] duration-200 focus:ring-1 focus:ring-blue-300/40 empty:before:pointer-events-none empty:before:text-gray-400 empty:before:content-[attr(data-placeholder)] dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-100 dark:focus:ring-blue-500/30 dark:empty:before:text-gray-500"
+              className="min-h-[126px] w-full whitespace-pre-wrap break-words rounded-2xl border border-gray-200/60 bg-white/50 px-4 py-3 text-sm leading-relaxed shadow-sm outline-none transition-[border-color,box-shadow] duration-200 focus:ring-1 focus:ring-blue-300/40 empty:before:pointer-events-none empty:before:text-gray-400 empty:before:content-[attr(data-placeholder)] dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-100 dark:focus:ring-blue-500/30 dark:empty:before:text-gray-500"
             />
           </div>
 
