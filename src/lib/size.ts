@@ -168,6 +168,11 @@ export const POSTER_SIZE_PRESETS = [
     size: '1712x3840',
   },
   {
+    label: '78×200cm',
+    description: '39:100 竖版海报',
+    size: '1504x3840',
+  },
+  {
     label: '60×160cm',
     description: '3:8 竖版海报',
     size: '1440x3840',
