@@ -9,6 +9,7 @@ import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
+import { isHfsyApiBaseUrl } from '../lib/hfsyapi'
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
 import ViewportTooltip from './ViewportTooltip'
@@ -458,6 +459,7 @@ export default function InputBar() {
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
+  const isHfsyApiProvider = activeProvider === 'openai' && isHfsyApiBaseUrl(activeProfile.baseUrl)
   const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
   const nLimitHintText = `最大请求数量为 ${outputImageLimit}`
@@ -1399,32 +1401,34 @@ export default function InputBar() {
           text={<>fal.ai 的文生图模式不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 参数</>}
         />
       </label>
-      <label
-        className="relative flex flex-col gap-0.5"
-        onMouseEnter={showQualityHint}
-        onMouseLeave={hideQualityHint}
-        onTouchStart={startQualityHintTouch}
-        onTouchEnd={clearQualityHintTimer}
-        onTouchCancel={hideQualityHint}
-        onClick={showQualityHint}
-      >
-        <span className="text-gray-400 dark:text-gray-500 ml-1">质量</span>
-        <Select
-          value={settings.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
-          onChange={(val) => {
-            if (!settings.codexCli) setParams({ quality: val as any })
-          }}
-          options={qualityOptions}
-          disabled={settings.codexCli}
-          className={settings.codexCli
-            ? 'px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed text-xs transition-all duration-200 shadow-sm'
-            : selectClass}
-        />
-        <ButtonTooltip
-          visible={(settings.codexCli || isFalProvider) && qualityHintVisible}
-          text={isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
-        />
-      </label>
+      {!isHfsyApiProvider && (
+        <label
+          className="relative flex flex-col gap-0.5"
+          onMouseEnter={showQualityHint}
+          onMouseLeave={hideQualityHint}
+          onTouchStart={startQualityHintTouch}
+          onTouchEnd={clearQualityHintTimer}
+          onTouchCancel={hideQualityHint}
+          onClick={showQualityHint}
+        >
+          <span className="text-gray-400 dark:text-gray-500 ml-1">质量</span>
+          <Select
+            value={settings.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
+            onChange={(val) => {
+              if (!settings.codexCli) setParams({ quality: val as any })
+            }}
+            options={qualityOptions}
+            disabled={settings.codexCli}
+            className={settings.codexCli
+              ? 'px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed text-xs transition-all duration-200 shadow-sm'
+              : selectClass}
+          />
+          <ButtonTooltip
+            visible={(settings.codexCli || isFalProvider) && qualityHintVisible}
+            text={isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
+          />
+        </label>
+      )}
       <label className="flex flex-col gap-0.5">
         <span className="text-gray-400 dark:text-gray-500 ml-1">格式</span>
         <Select

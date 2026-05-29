@@ -255,6 +255,115 @@ describe('callImageApi', () => {
     expect(images).toHaveLength(1)
   })
 
+  it('uses hfsyapi generation JSON flow with fixed model and reference images', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://www.hfsyapi.cn/v1',
+        model: 'ignored-model',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '1712x3840', quality: 'high', n: 2 },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.hfsyapi.cn/v1/images/generations',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'Content-Type': 'application/json',
+    })
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      model: 'gpt-image-2pro',
+      n: 2,
+      size: '1712x3840',
+      prompt: 'prompt',
+      reference_images: ['data:image/png;base64,aW1hZ2U='],
+      response_format: 'b64_json',
+    })
+  })
+
+  it('uses hfsyapi generation JSON flow without reference images', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://www.hfsyapi.cn/v1/',
+        model: 'ignored-model',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      model: 'gpt-image-2pro',
+      reference_images: [],
+      response_format: 'b64_json',
+    })
+  })
+
+  it('rejects hfsyapi requests with more than 4 reference images', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await expect(callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://www.hfsyapi.cn/v1',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: Array.from({ length: 5 }, (_, index) => `data:image/png;base64,${index}`),
+    })).rejects.toThrow('reference_images 最多支持 4 张图')
+  })
+
+  it('rejects hfsyapi requests with a mask image', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await expect(callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://www.hfsyapi.cn/v1',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+      maskDataUrl: 'data:image/png;base64,bWFzaw==',
+    })).rejects.toThrow('hfsyapi 当前流程不支持遮罩')
+  })
+
   it('ignores stored API proxy settings when the current deployment has no proxy', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'false')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({

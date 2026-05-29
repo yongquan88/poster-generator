@@ -1,6 +1,7 @@
 import type { ApiProfile, CustomProviderDefinition, CustomProviderPollMapping, CustomProviderResultMapping, CustomProviderSubmitMapping, ImageApiResponse, ResponsesApiResponse, TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
+import { HFSYAPI_IMAGE_MODEL, HFSYAPI_MAX_REFERENCE_IMAGES, isHfsyApiBaseUrl } from './hfsyapi'
 import {
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
@@ -217,9 +218,69 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
 
+  if (isHfsyApiBaseUrl(profile.baseUrl)) {
+    return callHfsyApiImageApi(opts, profile)
+  }
+
   return profile.apiMode === 'responses'
     ? callResponsesImageApi(opts, profile)
     : callImagesApi(opts, profile)
+}
+
+async function callHfsyApiImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const { prompt, params, inputImageDataUrls } = opts
+  if (inputImageDataUrls.length > HFSYAPI_MAX_REFERENCE_IMAGES) {
+    throw new Error(`reference_images 最多支持 ${HFSYAPI_MAX_REFERENCE_IMAGES} 张图`)
+  }
+  if (opts.maskDataUrl) {
+    throw new Error('hfsyapi 当前流程不支持遮罩')
+  }
+
+  const mime = MIME_MAP[params.output_format] || 'image/png'
+  const proxyConfig = readClientDevProxyConfig()
+  const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
+  const requestHeaders = createRequestHeaders(profile)
+  const useLocalSdkProxy = import.meta.env.DEV && !import.meta.env.VITEST && profile.provider === 'openai'
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), profile.timeout * 1000)
+
+  try {
+    assertImageInputPayloadSize(inputImageDataUrls.reduce((sum, dataUrl) => sum + getDataUrlEncodedByteSize(dataUrl), 0))
+
+    const body = {
+      model: HFSYAPI_IMAGE_MODEL,
+      n: params.n > 0 ? params.n : 1,
+      size: params.size,
+      prompt,
+      reference_images: inputImageDataUrls,
+      response_format: 'b64_json',
+    }
+
+    const response = await fetch(
+      useLocalSdkProxy
+        ? '/openai-sdk-proxy/images/generations'
+        : buildApiUrl(profile.baseUrl, 'images/generations', proxyConfig, useApiProxy),
+      {
+        method: 'POST',
+        headers: {
+          ...requestHeaders,
+          'Content-Type': 'application/json',
+          ...(useLocalSdkProxy ? { 'x-openai-base-url': profile.baseUrl } : {}),
+        },
+        cache: 'no-store',
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response))
+    }
+
+    return parseImagesApiResponse(await response.json() as ImageApiResponse, mime, controller.signal)
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 async function callImagesApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {

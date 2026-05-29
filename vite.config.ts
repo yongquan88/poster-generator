@@ -114,7 +114,8 @@ function createOpenAiSdkProxyPlugin(): Plugin {
             output_format: payload.output_format,
             n: payload.n,
             response_format: payload.response_format,
-          })
+            reference_images: payload.reference_images,
+          } as any)
 
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
