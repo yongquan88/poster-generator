@@ -94,6 +94,27 @@ async function blobToDataUrl(blob: Blob, fallbackMime: string): Promise<string> 
 
 export const IMAGE_FETCH_CORS_HINT = ' 可点链接按钮复制结果链接，或尝试开启「返回 Base64 图片数据」避免此问题。'
 
+function shouldUpgradeHttpImageUrlToHttps(parsedUrl: URL): boolean {
+  if (parsedUrl.protocol !== 'http:') return false
+
+  const hostname = parsedUrl.hostname.toLowerCase()
+  return /(?:^|\.)oss-[a-z0-9-]+\.aliyuncs\.com$/.test(hostname)
+}
+
+function normalizeFetchableImageUrl(url: string): string {
+  try {
+    const parsedUrl = new URL(url)
+    if (shouldUpgradeHttpImageUrlToHttps(parsedUrl)) {
+      parsedUrl.protocol = 'https:'
+      return parsedUrl.toString()
+    }
+  } catch {
+    /* keep the original URL and let fetch surface the real error */
+  }
+
+  return url
+}
+
 async function probeNoCorsReachability(url: string, timeoutMs = 8000): Promise<'opaque' | 'reachable' | 'failed'> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -114,16 +135,17 @@ async function probeNoCorsReachability(url: string, timeoutMs = 8000): Promise<'
 
 export async function fetchImageUrlAsDataUrl(url: string, fallbackMime: string, signal?: AbortSignal): Promise<string> {
   if (isDataUrl(url)) return url
+  const fetchUrl = normalizeFetchableImageUrl(url)
 
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await fetch(fetchUrl, {
       cache: 'no-store',
       signal,
     })
   } catch (err) {
     if (err instanceof TypeError) {
-      const probe = await probeNoCorsReachability(url)
+      const probe = await probeNoCorsReachability(fetchUrl)
       if (probe === 'opaque') {
         throw new Error(`图片已生成，但因服务商未允许跨域，图片链接下载失败。${IMAGE_FETCH_CORS_HINT}`)
       }
