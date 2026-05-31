@@ -18,6 +18,7 @@ import {
   normalizeBase64Image,
   pickActualParams,
 } from './imageApiShared'
+import { QIUQIU_TOKEN_IMAGE_MODEL, QIUQIU_TOKEN_QMP_OPTIONS, isQiuqiuTokenBaseUrl } from './qiuqiuToken'
 
 const PROMPT_REWRITE_GUARD_PREFIX = 'Use the following text as the complete prompt. Do not rewrite it:'
 
@@ -222,6 +223,10 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
     return callHfsyApiImageApi(opts, profile)
   }
 
+  if (isQiuqiuTokenBaseUrl(profile.baseUrl)) {
+    return callQiuqiuTokenImageApi(opts, profile)
+  }
+
   return profile.apiMode === 'responses'
     ? callResponsesImageApi(opts, profile)
     : callImagesApi(opts, profile)
@@ -280,6 +285,290 @@ async function callHfsyApiImageApi(opts: CallApiOptions, profile: ApiProfile): P
     return parseImagesApiResponse(await response.json() as ImageApiResponse, mime, controller.signal)
   } finally {
     clearTimeout(timeoutId)
+  }
+}
+
+async function callQiuqiuTokenImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const { params, inputImageDataUrls } = opts
+  const isEdit = inputImageDataUrls.length > 0
+  const mime = MIME_MAP[params.output_format] || 'image/png'
+  const proxyConfig = readClientDevProxyConfig()
+  const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
+  const requestHeaders = createRequestHeaders(profile)
+  const useLocalSdkProxy = shouldUseLocalOpenAiSdkProxy(profile)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), profile.timeout * 1000)
+
+  try {
+    let response: Response
+
+    if (isEdit) {
+      const formData = new FormData()
+      formData.append('model', QIUQIU_TOKEN_IMAGE_MODEL)
+      formData.append('prompt', opts.prompt)
+      formData.append('qmp_options', JSON.stringify(QIUQIU_TOKEN_QMP_OPTIONS))
+      formData.append('size', params.size)
+      formData.append('quality', params.quality)
+      formData.append('output_format', params.output_format)
+      formData.append('moderation', params.moderation)
+      if (params.output_compression != null) formData.append('output_compression', String(params.output_compression))
+      if (params.n > 1) formData.append('n', String(params.n))
+
+      const imageBlobs: Blob[] = []
+      for (const dataUrl of inputImageDataUrls) {
+        imageBlobs.push(await dataUrlToBlob(dataUrl))
+      }
+      const maskBlob = opts.maskDataUrl ? await dataUrlToBlob(opts.maskDataUrl) : null
+
+      if (opts.maskDataUrl) {
+        assertMaskEditFileSize('遮罩主图文件', imageBlobs[0]?.size ?? 0)
+        assertMaskEditFileSize('遮罩文件', maskBlob?.size ?? 0)
+      }
+      assertImageInputPayloadSize(imageBlobs.reduce((sum, blob) => sum + blob.size, 0) + (maskBlob?.size ?? 0))
+
+      for (let i = 0; i < imageBlobs.length; i++) {
+        const blob = imageBlobs[i]
+        const ext = blob.type.split('/')[1] || 'png'
+        formData.append('image[]', blob, `input-${i + 1}.${ext}`)
+      }
+      if (maskBlob) formData.append('mask', maskBlob, 'mask.png')
+
+      response = await fetch(
+        buildQiuqiuTokenRequestUrl(profile, 'images/edits', proxyConfig, useApiProxy, useLocalSdkProxy),
+        {
+          method: 'POST',
+          headers: createQiuqiuTokenRequestHeaders(requestHeaders, profile, useLocalSdkProxy),
+          cache: 'no-store',
+          body: formData,
+          signal: controller.signal,
+        },
+      )
+    } else {
+      assertImageInputPayloadSize(inputImageDataUrls.reduce((sum, dataUrl) => sum + getDataUrlEncodedByteSize(dataUrl), 0))
+
+      const body: Record<string, unknown> = {
+        model: QIUQIU_TOKEN_IMAGE_MODEL,
+        prompt: opts.prompt,
+        qmp_options: QIUQIU_TOKEN_QMP_OPTIONS,
+        size: params.size,
+        quality: params.quality,
+        output_format: params.output_format,
+        moderation: params.moderation,
+      }
+      if (params.output_compression != null) body.output_compression = params.output_compression
+      if (params.n > 1) body.n = params.n
+
+      response = await fetch(
+        buildQiuqiuTokenRequestUrl(profile, 'images/generations', proxyConfig, useApiProxy, useLocalSdkProxy),
+        {
+          method: 'POST',
+          headers: {
+            ...createQiuqiuTokenRequestHeaders(requestHeaders, profile, useLocalSdkProxy),
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        },
+      )
+    }
+
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response))
+    }
+
+    const payload = await response.json()
+    const imageResult = await parseQiuqiuTokenImagePayload(payload, mime, controller.signal)
+    if (imageResult) return imageResult
+
+    const taskId = getQiuqiuTokenTaskId(payload, response)
+    if (!taskId) {
+      const err = new Error('球球Token 接口没有返回图片数据或异步任务 ID')
+      ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+      throw err
+    }
+
+    return pollQiuqiuTokenTaskResult(profile, taskId, mime, controller.signal, useLocalSdkProxy)
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function shouldUseLocalOpenAiSdkProxy(profile: ApiProfile) {
+  return import.meta.env.DEV && !import.meta.env.VITEST && profile.provider === 'openai'
+}
+
+function buildQiuqiuTokenRequestUrl(
+  profile: ApiProfile,
+  path: string,
+  proxyConfig: ReturnType<typeof readClientDevProxyConfig>,
+  useApiProxy: boolean,
+  useLocalSdkProxy: boolean,
+) {
+  return useLocalSdkProxy
+    ? `/openai-sdk-proxy/${path.replace(/^\/+/, '')}`
+    : buildApiUrl(profile.baseUrl, path, proxyConfig, useApiProxy)
+}
+
+function createQiuqiuTokenRequestHeaders(
+  headers: Record<string, string>,
+  profile: ApiProfile,
+  useLocalSdkProxy: boolean,
+) {
+  return {
+    ...headers,
+    ...(useLocalSdkProxy
+      ? {
+          'x-openai-base-url': profile.baseUrl,
+          'x-qiuqiu-token-async': 'true',
+        }
+      : {}),
+  }
+}
+
+async function parseQiuqiuTokenImagePayload(payload: unknown, mime: string, signal?: AbortSignal): Promise<CallApiResult | null> {
+  if (payload && typeof payload === 'object' && Array.isArray((payload as ImageApiResponse).data)) {
+    try {
+      return await parseImagesApiResponse(payload as ImageApiResponse, mime, signal)
+    } catch {
+      /* task envelopes can also use a data field, so keep probing other shapes */
+    }
+  }
+
+  try {
+    return await extractCustomImages(payload, {
+      imageUrlPaths: [
+        'data.*.url',
+        'data.data.*.url',
+        'result.data.*.url',
+        'result.images.*.url',
+        'output.data.*.url',
+        'response.data.*.url',
+      ],
+      b64JsonPaths: [
+        'data.*.b64_json',
+        'data.data.*.b64_json',
+        'result.data.*.b64_json',
+        'result.images.*.b64_json',
+        'output.data.*.b64_json',
+        'response.data.*.b64_json',
+      ],
+    }, mime, signal)
+  } catch {
+    return null
+  }
+}
+
+function getQiuqiuTokenTaskId(payload: unknown, response?: Response): string {
+  const location = response?.headers.get('location')
+  if (location) {
+    const lastSegment = location.split('?')[0].split('/').filter(Boolean).pop()
+    if (lastSegment) return lastSegment
+  }
+
+  const directPaths = [
+    'id',
+    'task_id',
+    'taskId',
+    'data.id',
+    'data.task_id',
+    'data.taskId',
+    'task.id',
+    'task.task_id',
+    'result.id',
+    'response.id',
+  ]
+  for (const path of directPaths) {
+    const value = getByPath(payload, path)
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+
+  const data = getByPath(payload, 'data')
+  if (typeof data === 'string' && data.trim()) return data.trim()
+  return ''
+}
+
+function getQiuqiuTokenTaskStatus(payload: unknown): string {
+  const statusPaths = [
+    'status',
+    'data.status',
+    'task.status',
+    'result.status',
+    'response.status',
+  ]
+  for (const path of statusPaths) {
+    const value = getByPath(payload, path)
+    if (typeof value === 'string' && value.trim()) return value.trim().toLowerCase()
+  }
+  return ''
+}
+
+function isQiuqiuTokenTaskFailure(status: string) {
+  return ['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(status)
+}
+
+function getQiuqiuTokenTaskError(payload: unknown): string {
+  const errorPaths = [
+    'error.message',
+    'error',
+    'message',
+    'data.error.message',
+    'data.error',
+    'data.fail_reason',
+    'result.error.message',
+  ]
+  for (const path of errorPaths) {
+    const value = getByPath(payload, path)
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return '球球Token 异步任务失败'
+}
+
+async function pollQiuqiuTokenTaskResult(
+  profile: ApiProfile,
+  taskId: string,
+  mime: string,
+  signal: AbortSignal,
+  useLocalSdkProxy = false,
+): Promise<CallApiResult> {
+  const proxyConfig = readClientDevProxyConfig()
+  const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
+  const requestHeaders = createRequestHeaders(profile)
+
+  while (true) {
+    const response = await fetch(
+      buildQiuqiuTokenRequestUrl(
+        profile,
+        `images/tasks/${encodeURIComponent(taskId)}`,
+        proxyConfig,
+        useApiProxy,
+        useLocalSdkProxy,
+      ),
+      {
+        method: 'GET',
+        headers: createQiuqiuTokenRequestHeaders(requestHeaders, profile, useLocalSdkProxy),
+        cache: 'no-store',
+        signal,
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response))
+    }
+
+    const payload = await response.json()
+    const imageResult = await parseQiuqiuTokenImagePayload(payload, mime, signal)
+    if (imageResult) return imageResult
+
+    const status = getQiuqiuTokenTaskStatus(payload)
+    if (isQiuqiuTokenTaskFailure(status)) {
+      const err = new Error(getQiuqiuTokenTaskError(payload))
+      ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+      throw err
+    }
+
+    await sleep(2000, signal)
   }
 }
 

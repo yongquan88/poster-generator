@@ -364,6 +364,336 @@ describe('callImageApi', () => {
     })).rejects.toThrow('hfsyapi 当前流程不支持遮罩')
   })
 
+  it('uses qiuqiutoken generation JSON flow with GPT Image 2 fields', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.qiuqiutoken.com/v1/',
+        model: 'ignored-model',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.qiuqiutoken.com/v1/',
+          model: 'ignored-model',
+          responseFormatB64Json: true,
+        }],
+      },
+      prompt: 'prompt',
+      params: {
+        ...DEFAULT_PARAMS,
+        size: '1024x1024',
+        quality: 'high',
+        output_format: 'webp',
+        output_compression: 80,
+        moderation: 'low',
+        n: 2,
+      },
+      inputImageDataUrls: [],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://img.qiuqiutoken.com/v1/images/generations',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'Content-Type': 'application/json',
+    })
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      model: 'gpt-image-2',
+      prompt: 'prompt',
+      qmp_options: {
+        mode: 'async',
+        persistence_mode: 'persisted',
+      },
+      size: '1024x1024',
+      quality: 'high',
+      output_format: 'webp',
+      output_compression: 80,
+      moderation: 'low',
+      n: 2,
+    })
+  })
+
+  it('polls qiuqiutoken async generation tasks until image data is available', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'qmp-task-1',
+        status: 'queued',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'qmp-task-1',
+        status: 'running',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'qmp-task-1',
+        status: 'succeeded',
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const promise = callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.qiuqiutoken.com/v1',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.qiuqiutoken.com/v1',
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '1024x1024' },
+      inputImageDataUrls: [],
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[1][0]).toBe('https://img.qiuqiutoken.com/v1/images/tasks/qmp-task-1')
+    await vi.advanceTimersByTimeAsync(2000)
+
+    await expect(promise).resolves.toMatchObject({
+      images: ['data:image/png;base64,aW1hZ2U='],
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('uses the API proxy for qiuqiutoken task polling when the production proxy is enabled', async () => {
+    vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'true')
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        task_id: 'qmp-task-1',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'succeeded',
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const promise = callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        apiProxy: true,
+        baseUrl: 'https://img.qiuqiutoken.com/v1',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          apiProxy: true,
+          baseUrl: 'https://img.qiuqiutoken.com/v1',
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '1024x1024' },
+      inputImageDataUrls: [],
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[0][0]).toBe('/api-proxy/images/generations')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api-proxy/images/tasks/qmp-task-1')
+    await expect(promise).resolves.toMatchObject({
+      images: ['data:image/png;base64,aW1hZ2U='],
+    })
+  })
+
+  it('uses the local SDK proxy for qiuqiutoken generation and task polling in the dev server', async () => {
+    vi.stubEnv('VITEST', '')
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        taskId: 'qmp-task-1',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'succeeded',
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+
+    const promise = callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.qiuqiutoken.com/v1',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.qiuqiutoken.com/v1',
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, size: '1024x1024' },
+      inputImageDataUrls: [],
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/openai-sdk-proxy/images/generations',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'Content-Type': 'application/json',
+      'x-openai-base-url': 'https://img.qiuqiutoken.com/v1',
+      'x-qiuqiu-token-async': 'true',
+    })
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      qmp_options: {
+        mode: 'async',
+        persistence_mode: 'persisted',
+      },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/openai-sdk-proxy/images/tasks/qmp-task-1',
+      expect.objectContaining({ method: 'GET' }),
+    )
+    const [, pollInit] = fetchMock.mock.calls[1]
+    expect((pollInit as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'x-openai-base-url': 'https://img.qiuqiutoken.com/v1',
+      'x-qiuqiu-token-async': 'true',
+    })
+    await expect(promise).resolves.toMatchObject({
+      images: ['data:image/png;base64,aW1hZ2U='],
+    })
+  })
+
+  it('uses qiuqiutoken multipart image edit flow with image array and mask files', async () => {
+    const realFetch = globalThis.fetch
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).startsWith('data:')) return realFetch(input, init)
+      return new Response(JSON.stringify({
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.qiuqiutoken.com/v1',
+        model: 'ignored-model',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.qiuqiutoken.com/v1',
+          model: 'ignored-model',
+          responseFormatB64Json: true,
+        }],
+      },
+      prompt: 'edit prompt',
+      params: {
+        ...DEFAULT_PARAMS,
+        size: '1024x1024',
+        quality: 'medium',
+        output_format: 'png',
+        moderation: 'low',
+        n: 1,
+      },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+      maskDataUrl: 'data:image/png;base64,bWFzaw==',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://img.qiuqiutoken.com/v1/images/edits',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [apiCall] = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('https://img.qiuqiutoken.com/'))
+    const [, init] = apiCall
+    const headers = (init as RequestInit).headers as Record<string, string>
+    const formData = (init as RequestInit).body as FormData
+    expect(headers).toMatchObject({ Authorization: 'Bearer test-key' })
+    expect(headers).not.toHaveProperty('Content-Type')
+    expect(formData).toBeInstanceOf(FormData)
+    expect(formData.get('model')).toBe('gpt-image-2')
+    expect(formData.get('prompt')).toBe('edit prompt')
+    expect(formData.get('size')).toBe('1024x1024')
+    expect(formData.get('quality')).toBe('medium')
+    expect(formData.get('output_format')).toBe('png')
+    expect(formData.get('moderation')).toBe('low')
+    expect(formData.get('qmp_options')).toBe(JSON.stringify({
+      mode: 'async',
+      persistence_mode: 'persisted',
+    }))
+    expect(formData.get('response_format')).toBeNull()
+    expect(formData.getAll('image[]')).toHaveLength(1)
+    expect(formData.get('mask')).toBeInstanceOf(Blob)
+  })
+
+  it('uses the local SDK proxy for qiuqiutoken image edits in the dev server', async () => {
+    vi.stubEnv('VITEST', '')
+    const realFetch = globalThis.fetch
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).startsWith('data:')) return realFetch(input, init)
+      return new Response(JSON.stringify({
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.qiuqiutoken.com/v1',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.qiuqiutoken.com/v1',
+        }],
+      },
+      prompt: 'edit prompt',
+      params: { ...DEFAULT_PARAMS, size: '1024x1024' },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+    })
+
+    const apiCall = fetchMock.mock.calls.find(([url]) => url === '/openai-sdk-proxy/images/edits')
+    expect(apiCall).toBeTruthy()
+    const [, init] = apiCall!
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+      'x-openai-base-url': 'https://img.qiuqiutoken.com/v1',
+      'x-qiuqiu-token-async': 'true',
+    })
+    expect(headers).not.toHaveProperty('Content-Type')
+    expect((init as RequestInit).body).toBeInstanceOf(FormData)
+  })
+
   it('ignores stored API proxy settings when the current deployment has no proxy', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'false')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({

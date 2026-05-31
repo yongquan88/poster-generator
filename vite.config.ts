@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'fs'
-import type { IncomingMessage } from 'http'
+import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
 import OpenAI, { toFile, type Uploadable } from 'openai'
+import { EnvHttpProxyAgent } from 'undici'
 import { normalizeDevProxyConfig } from './src/lib/devProxy'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
@@ -20,13 +21,17 @@ function loadDevProxyConfig() {
   }
 }
 
-function readRequestBody(req: IncomingMessage): Promise<string> {
+function readRequestBuffer(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
+}
+
+async function readRequestBody(req: IncomingMessage): Promise<string> {
+  return (await readRequestBuffer(req)).toString('utf8')
 }
 
 function readAuthHeaders(req: IncomingMessage) {
@@ -90,6 +95,60 @@ async function formFileToUploadable(value: FormDataEntryValue, fallbackName: str
   return toFile(value, value.name || fallbackName, { type: value.type || 'application/octet-stream' })
 }
 
+function buildOpenAiProxyTargetUrl(baseURL: string, path: string) {
+  return `${baseURL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
+}
+
+function hasEnvProxy() {
+  return Boolean(
+    process.env.HTTPS_PROXY ||
+      process.env.HTTP_PROXY ||
+      process.env.ALL_PROXY ||
+      process.env.https_proxy ||
+      process.env.http_proxy ||
+      process.env.all_proxy,
+  )
+}
+
+async function proxyOpenAiCompatibleRawRequest(req: IncomingMessage, res: ServerResponse, path: string) {
+  const { apiKey, baseURL } = readAuthHeaders(req)
+  const method = req.method ?? 'GET'
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+  }
+  const contentType = getHeaderValue(req, 'content-type')
+  if (contentType) headers['Content-Type'] = contentType
+  const body = method === 'GET' || method === 'HEAD' ? undefined : await readRequestBuffer(req)
+
+  const upstream = await fetch(buildOpenAiProxyTargetUrl(baseURL, path), {
+    method,
+    headers,
+    body,
+    cache: 'no-store',
+    ...(hasEnvProxy() ? { dispatcher: new EnvHttpProxyAgent() } : {}),
+  } as RequestInit & { dispatcher?: EnvHttpProxyAgent })
+
+  res.statusCode = upstream.status
+  upstream.headers.forEach((value, key) => {
+    if (!['content-encoding', 'content-length'].includes(key.toLowerCase())) res.setHeader(key, value)
+  })
+  res.end(Buffer.from(await upstream.arrayBuffer()))
+}
+
+function shouldUseRawQiuqiuTokenProxy(req: IncomingMessage) {
+  return getHeaderValue(req, 'x-qiuqiu-token-async') === 'true'
+}
+
+function getProxyErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) return String(error)
+  const cause = 'cause' in error ? (error as { cause?: unknown }).cause : undefined
+  const causeMessage = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : ''
+  const message = causeMessage ? `${error.message}: ${causeMessage}` : error.message
+  return hasEnvProxy()
+    ? message
+    : `${message}。本地 Node 代理未检测到 HTTPS_PROXY/HTTP_PROXY/ALL_PROXY；如果浏览器通过代理访问外网，请用例如 HTTPS_PROXY=http://127.0.0.1:7890 npm run dev 启动。`
+}
+
 function createOpenAiSdkProxyPlugin(): Plugin {
   return {
     name: 'openai-sdk-proxy',
@@ -103,6 +162,11 @@ function createOpenAiSdkProxyPlugin(): Plugin {
         }
 
         try {
+          if (shouldUseRawQiuqiuTokenProxy(req)) {
+            await proxyOpenAiCompatibleRawRequest(req, res, 'images/generations')
+            return
+          }
+
           const { apiKey, baseURL } = readAuthHeaders(req)
           const payload = JSON.parse(await readRequestBody(req))
           const client = new OpenAI({ apiKey, baseURL })
@@ -112,6 +176,8 @@ function createOpenAiSdkProxyPlugin(): Plugin {
             size: payload.size,
             quality: payload.quality,
             output_format: payload.output_format,
+            output_compression: payload.output_compression,
+            moderation: payload.moderation,
             n: payload.n,
             response_format: payload.response_format,
             reference_images: payload.reference_images,
@@ -125,7 +191,7 @@ function createOpenAiSdkProxyPlugin(): Plugin {
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
           res.end(JSON.stringify({
             error: {
-              message: error instanceof Error ? error.message : String(error),
+              message: getProxyErrorMessage(error),
             },
           }))
         }
@@ -140,6 +206,11 @@ function createOpenAiSdkProxyPlugin(): Plugin {
         }
 
         try {
+          if (shouldUseRawQiuqiuTokenProxy(req)) {
+            await proxyOpenAiCompatibleRawRequest(req, res, 'images/edits')
+            return
+          }
+
           const { apiKey, baseURL } = readAuthHeaders(req)
           const formData = await createRequestFromIncomingMessage(req).formData()
           const imageEntries = [
@@ -162,9 +233,11 @@ function createOpenAiSdkProxyPlugin(): Plugin {
             size: getOptionalString(formData, 'size'),
             quality: getOptionalString(formData, 'quality') as any,
             output_format: getOptionalString(formData, 'output_format') as any,
+            output_compression: getOptionalNumber(formData, 'output_compression'),
+            moderation: getOptionalString(formData, 'moderation') as any,
             n: getOptionalNumber(formData, 'n'),
             response_format: getOptionalString(formData, 'response_format') as any,
-          })
+          } as any)
 
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -174,7 +247,28 @@ function createOpenAiSdkProxyPlugin(): Plugin {
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
           res.end(JSON.stringify({
             error: {
-              message: error instanceof Error ? error.message : String(error),
+              message: getProxyErrorMessage(error),
+            },
+          }))
+        }
+      })
+
+      server.middlewares.use('/openai-sdk-proxy/images/tasks', async (req, res) => {
+        if (req.method !== 'GET') {
+          res.statusCode = 405
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ error: { message: 'Method not allowed' } }))
+          return
+        }
+
+        try {
+          await proxyOpenAiCompatibleRawRequest(req, res, `images/tasks${req.url ?? ''}`)
+        } catch (error) {
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({
+            error: {
+              message: getProxyErrorMessage(error),
             },
           }))
         }
