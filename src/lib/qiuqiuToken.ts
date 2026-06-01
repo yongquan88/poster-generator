@@ -10,5 +10,10 @@ export function normalizeQiuqiuTokenBaseUrl(baseUrl: string) {
 }
 
 export function isQiuqiuTokenBaseUrl(baseUrl: string) {
-  return normalizeQiuqiuTokenBaseUrl(baseUrl) === QIUQIU_TOKEN_BASE_URL
+  try {
+    const hostname = new URL(normalizeQiuqiuTokenBaseUrl(baseUrl)).hostname
+    return hostname === 'qiuqiutoken.com' || hostname.endsWith('.qiuqiutoken.com')
+  } catch {
+    return false
+  }
 }
