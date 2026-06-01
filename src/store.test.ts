@@ -208,6 +208,23 @@ describe('input persistence setting', () => {
     expect(persisted.prompt).toBe('')
     expect(persisted.inputImages).toEqual([])
   })
+
+  it('persists prompt snippets as part of settings', () => {
+    useStore.setState({
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        promptSnippets: [
+          { id: 'snippet-a', title: '构图', content: 'wide angle composition' },
+        ],
+      } as any),
+    })
+
+    const persisted = getPersistedState(useStore.getState())
+
+    expect(persisted.settings.promptSnippets).toEqual([
+      { id: 'snippet-a', title: '构图', content: 'wide angle composition' },
+    ])
+  })
 })
 
 describe('reused task API profile', () => {

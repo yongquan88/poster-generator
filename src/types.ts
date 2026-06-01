@@ -52,6 +52,12 @@ export interface CustomProviderDefinition {
   poll?: CustomProviderPollMapping
 }
 
+export interface PromptSnippet {
+  id: string
+  title: string
+  content: string
+}
+
 export interface ApiProfile {
   id: string
   name: string
@@ -77,6 +83,7 @@ export interface AppSettings {
   codexCli: boolean
   apiProxy: boolean
   customProviders: CustomProviderDefinition[]
+  promptSnippets: PromptSnippet[]
   providerOrder?: string[]
   clearInputAfterSubmit: boolean
   persistInputOnRestart: boolean

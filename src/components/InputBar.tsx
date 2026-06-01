@@ -279,6 +279,7 @@ export default function InputBar() {
   const params = useStore((s) => s.params)
   const setParams = useStore((s) => s.setParams)
   const settings = useStore((s) => s.settings)
+  const promptSnippets = settings.promptSnippets
   const reusedTaskApiProfileId = useStore((s) => s.reusedTaskApiProfileId)
   const setShowSettings = useStore((s) => s.setShowSettings)
   const setLightboxImageId = useStore((s) => s.setLightboxImageId)
@@ -529,6 +530,33 @@ export default function InputBar() {
     const promptEnd = getPromptIndexFromVisibleIndex(prompt, selection.end)
     const nextPrompt = `${prompt.slice(0, promptStart)}${text}${prompt.slice(promptEnd)}`
     const nextCursor = selection.start + text.length
+    setPrompt(nextPrompt)
+    window.setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        setContentEditableCursor(textareaRef.current, nextCursor)
+      }
+    }, 0)
+  }, [prompt, setPrompt])
+
+  const insertPromptSnippet = useCallback((text: string) => {
+    const el = textareaRef.current
+    const visibleLength = stripImageMentionMarkers(prompt).length
+    const isFocused = el && document.activeElement === el
+    const selection = isFocused && el
+      ? getContentEditableSelection(el)
+      : { start: visibleLength, end: visibleLength }
+    const promptStart = getPromptIndexFromVisibleIndex(prompt, selection.start)
+    const promptEnd = getPromptIndexFromVisibleIndex(prompt, selection.end)
+    const before = prompt.slice(0, promptStart)
+    const after = prompt.slice(promptEnd)
+    const prefix = before.length > 0 && !before.endsWith('\n') ? '\n' : ''
+    const suffix = after.length > 0 && !after.startsWith('\n') ? '\n' : ''
+    const insertion = `${prefix}${text}${suffix}`
+    const nextPrompt = `${before}${insertion}${after}`
+    const nextCursor = selection.start + prefix.length + text.length
+
+    isUserInputRef.current = false
     setPrompt(nextPrompt)
     window.setTimeout(() => {
       if (textareaRef.current) {
@@ -1614,6 +1642,25 @@ export default function InputBar() {
             ) : (
               renderImageThumbs()
             )
+          )}
+
+          {promptSnippets.length > 0 && (
+            <div className="mb-3 -mx-1 overflow-x-auto pb-1 custom-scrollbar">
+              <div className="flex w-max max-w-none gap-2 px-1">
+                {promptSnippets.map((snippet) => (
+                  <button
+                    key={snippet.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => insertPromptSnippet(snippet.content)}
+                    className="shrink-0 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20"
+                    title={snippet.title}
+                  >
+                    {snippet.title}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* 输入框 */}

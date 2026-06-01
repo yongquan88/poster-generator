@@ -33,6 +33,7 @@ import type {
   ApiProfile,
   AppSettings,
   CustomProviderDefinition,
+  PromptSnippet,
 } from "../types";
 import { useCloseOnEscape } from "../hooks/useCloseOnEscape";
 import { usePreventBackgroundScroll } from "../hooks/usePreventBackgroundScroll";
@@ -40,6 +41,7 @@ import {
   DEFAULT_DROPDOWN_MAX_HEIGHT,
   getDropdownMaxHeight,
 } from "../lib/dropdown";
+import { movePromptSnippet, type PromptSnippetMoveDirection } from "../lib/promptSnippets";
 import Select from "./Select";
 import { Checkbox } from "./Checkbox";
 import ViewportTooltip from "./ViewportTooltip";
@@ -52,6 +54,7 @@ import {
   GithubIcon,
   ExportIcon,
   ImportIcon,
+  EditIcon,
   DragHandleIcon,
   LinkIcon,
 } from "./icons";
@@ -119,6 +122,11 @@ interface CustomProviderForm {
   json: string;
 }
 
+interface PromptSnippetForm {
+  title: string;
+  content: string;
+}
+
 const DEFAULT_CUSTOM_PROVIDER_MANIFEST = {
   name: "自定义服务商",
   submit: {
@@ -169,6 +177,10 @@ function createDefaultCustomProviderForm(): CustomProviderForm {
   return {
     json: JSON.stringify(DEFAULT_CUSTOM_PROVIDER_MANIFEST, null, 2),
   };
+}
+
+function createEmptyPromptSnippetForm(): PromptSnippetForm {
+  return { title: "", content: "" };
 }
 
 function customProviderToForm(
@@ -363,13 +375,21 @@ export default function SettingsModal() {
   const [customProviderImportError, setCustomProviderImportError] = useState<
     string | null
   >(null);
+  const [editingPromptSnippetId, setEditingPromptSnippetId] = useState<
+    string | null
+  >(null);
+  const [promptSnippetForm, setPromptSnippetForm] =
+    useState<PromptSnippetForm>(createEmptyPromptSnippetForm());
+  const [promptSnippetError, setPromptSnippetError] = useState<string | null>(
+    null,
+  );
   const [profileImportUrlTooltipVisible, setProfileImportUrlTooltipVisible] =
     useState(false);
   const [duplicateProfileTooltipVisible, setDuplicateProfileTooltipVisible] =
     useState(false);
   const [llmPromptTooltipVisible, setLlmPromptTooltipVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "general" | "api" | "data" | "about"
+    "general" | "prompts" | "api" | "data" | "about"
   >("general");
   const [exportConfig, setExportConfig] = useState(true);
   const [exportTasks, setExportTasks] = useState(true);
@@ -507,6 +527,9 @@ export default function SettingsModal() {
     });
     setDraft(nextDraft);
     setTimeoutInput(String(getActiveApiProfile(nextDraft).timeout));
+    setEditingPromptSnippetId(null);
+    setPromptSnippetForm(createEmptyPromptSnippetForm());
+    setPromptSnippetError(null);
   }, [
     apiProxyAvailable,
     apiProxyLocked,
@@ -1207,6 +1230,72 @@ export default function SettingsModal() {
     showToast("服务商已删除", "success");
   }
 
+  const updatePromptSnippetForm = (patch: Partial<PromptSnippetForm>) => {
+    setPromptSnippetForm((current) => ({ ...current, ...patch }));
+    setPromptSnippetError(null);
+  };
+
+  const resetPromptSnippetForm = () => {
+    setEditingPromptSnippetId(null);
+    setPromptSnippetForm(createEmptyPromptSnippetForm());
+    setPromptSnippetError(null);
+  };
+
+  const savePromptSnippet = () => {
+    const title = Array.from(promptSnippetForm.title.trim()).slice(0, 10).join("");
+    const content = promptSnippetForm.content.trim();
+    if (!title || !content) {
+      setPromptSnippetError("标题和内容不能为空");
+      return;
+    }
+
+    const snippet: PromptSnippet = {
+      id: editingPromptSnippetId ?? newId("prompt"),
+      title,
+      content,
+    };
+    const promptSnippets = editingPromptSnippetId
+      ? draft.promptSnippets.map((item) =>
+          item.id === editingPromptSnippetId ? snippet : item,
+        )
+      : [...draft.promptSnippets, snippet];
+    const nextDraft = normalizeSettings({ ...draft, promptSnippets });
+    commitSettings(nextDraft);
+    resetPromptSnippetForm();
+    showToast(editingPromptSnippetId ? "提示词已更新" : "提示词已添加", "success");
+  };
+
+  const editPromptSnippet = (snippet: PromptSnippet) => {
+    setEditingPromptSnippetId(snippet.id);
+    setPromptSnippetForm({ title: snippet.title, content: snippet.content });
+    setPromptSnippetError(null);
+  };
+
+  const confirmDeletePromptSnippet = (snippet: PromptSnippet) => {
+    setConfirmDialog({
+      title: "删除提示词",
+      message: `确定要删除提示词「${snippet.title}」吗？`,
+      action: () => {
+        const nextDraft = normalizeSettings({
+          ...draft,
+          promptSnippets: draft.promptSnippets.filter((item) => item.id !== snippet.id),
+        });
+        commitSettings(nextDraft);
+        if (editingPromptSnippetId === snippet.id) resetPromptSnippetForm();
+        showToast("提示词已删除", "success");
+      },
+    });
+  };
+
+  const movePromptSnippetInDraft = (
+    snippet: PromptSnippet,
+    direction: PromptSnippetMoveDirection,
+  ) => {
+    const promptSnippets = movePromptSnippet(draft.promptSnippets, snippet.id, direction);
+    if (promptSnippets === draft.promptSnippets) return;
+    commitSettings(normalizeSettings({ ...draft, promptSnippets }));
+  };
+
   const copyCustomProviderLlmPrompt = async () => {
     try {
       await copyTextToClipboard(CUSTOM_PROVIDER_LLM_PROMPT);
@@ -1398,6 +1487,25 @@ export default function SettingsModal() {
                   />
                 </svg>
                 API 配置
+              </button>
+              <button
+                onClick={() => setActiveTab("prompts")}
+                className={`whitespace-nowrap flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl transition-colors ${activeTab === "prompts" ? "bg-white dark:bg-white/[0.08] shadow-sm text-blue-600 dark:text-blue-400 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/[0.04]"}`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 7h8M8 11h8M8 15h5m-8 5h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                常用提示词
               </button>
               <button
                 onClick={() => setActiveTab("data")}
@@ -1602,6 +1710,160 @@ export default function SettingsModal() {
                     >
                       开启后，即使任务成功生成，也会在任务卡片和详情页显示重试按钮。
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "prompts" && (
+                <div className="space-y-5">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      常用提示词
+                    </h4>
+                    <p
+                      data-selectable-text
+                      className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-500"
+                    >
+                      保存常用提示词片段后，会在主输入框上方显示标题，点击即可插入内容。
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200/70 bg-white/60 p-4 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                    <div className="grid gap-3">
+                      <label className="block">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-300">
+                            标题
+                          </span>
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {Array.from(promptSnippetForm.title.trim()).length}/10
+                          </span>
+                        </div>
+                        <input
+                          value={promptSnippetForm.title}
+                          onChange={(e) =>
+                            updatePromptSnippetForm({
+                              title: Array.from(e.target.value).slice(0, 10).join(""),
+                            })
+                          }
+                          placeholder="例如：写实风格"
+                          className="w-full rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                          data-selectable-text
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm text-gray-600 dark:text-gray-300">
+                          内容
+                        </span>
+                        <textarea
+                          value={promptSnippetForm.content}
+                          onChange={(e) =>
+                            updatePromptSnippetForm({ content: e.target.value })
+                          }
+                          placeholder="输入要插入到主提示词中的片段内容"
+                          rows={5}
+                          className="w-full resize-y rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm leading-relaxed text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                          data-selectable-text
+                        />
+                      </label>
+                      {promptSnippetError && (
+                        <div className="text-xs text-red-500">
+                          {promptSnippetError}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {editingPromptSnippetId && (
+                          <button
+                            type="button"
+                            onClick={resetPromptSnippetForm}
+                            className="rounded-xl border border-gray-200/70 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.06]"
+                          >
+                            取消编辑
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={savePromptSnippet}
+                          className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-600"
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                          {editingPromptSnippetId ? "保存修改" : "新增提示词"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {draft.promptSnippets.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-gray-200/80 bg-gray-50/60 px-4 py-6 text-center text-sm text-gray-400 dark:border-white/[0.08] dark:bg-white/[0.02] dark:text-gray-500">
+                        还没有保存的提示词
+                      </div>
+                    ) : (
+                      draft.promptSnippets.map((snippet, index) => (
+                        <div
+                          key={snippet.id}
+                          className={`rounded-2xl border p-3 transition ${
+                            editingPromptSnippetId === snippet.id
+                              ? "border-blue-200 bg-blue-50/70 dark:border-blue-500/30 dark:bg-blue-500/10"
+                              : "border-gray-200/70 bg-white/50 dark:border-white/[0.08] dark:bg-white/[0.03]"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+                                {snippet.title}
+                              </div>
+                              <div
+                                data-selectable-text
+                                className="mt-1 line-clamp-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-500 dark:text-gray-500"
+                              >
+                                {snippet.content}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => movePromptSnippetInDraft(snippet, "up")}
+                                disabled={index === 0}
+                                className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 dark:hover:bg-white/[0.06]"
+                                aria-label={`上移提示词「${snippet.title}」`}
+                                title="上移"
+                              >
+                                <ChevronDownIcon className="h-4 w-4 rotate-180" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => movePromptSnippetInDraft(snippet, "down")}
+                                disabled={index === draft.promptSnippets.length - 1}
+                                className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 dark:hover:bg-white/[0.06]"
+                                aria-label={`下移提示词「${snippet.title}」`}
+                                title="下移"
+                              >
+                                <ChevronDownIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => editPromptSnippet(snippet)}
+                                className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-blue-500 dark:hover:bg-white/[0.06]"
+                                aria-label={`编辑提示词「${snippet.title}」`}
+                                title="编辑"
+                              >
+                                <EditIcon className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => confirmDeletePromptSnippet(snippet)}
+                                className="rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10"
+                                aria-label={`删除提示词「${snippet.title}」`}
+                                title="删除"
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

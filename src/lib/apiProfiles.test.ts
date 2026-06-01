@@ -4,6 +4,7 @@ import {
   DEFAULT_FAL_MODEL,
   DEFAULT_IMAGES_MODEL,
   DEFAULT_OPENAI_PROFILE_ID,
+  DEFAULT_PROMPT_SNIPPETS,
   DEFAULT_SETTINGS,
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
@@ -14,6 +15,39 @@ import {
   normalizeSettings,
   switchApiProfileProvider,
 } from './apiProfiles'
+
+describe('prompt snippets settings', () => {
+  it('defaults prompt snippets to the built-in snippets when the field is missing', () => {
+    const settings = normalizeSettings({})
+
+    expect(settings.promptSnippets).toEqual(DEFAULT_PROMPT_SNIPPETS)
+  })
+
+  it('keeps prompt snippets empty when the user has cleared them', () => {
+    const settings = normalizeSettings({ promptSnippets: [] })
+
+    expect(settings.promptSnippets).toEqual([])
+  })
+
+  it('normalizes prompt snippets and truncates titles to 10 characters', () => {
+    const settings = normalizeSettings({
+      promptSnippets: [
+        { id: 'snippet-a', title: '  常用风格提示词很长标题  ', content: '  cinematic light  ' },
+        { id: 'snippet-b', title: '', content: 'missing title' },
+        { id: 'snippet-c', title: 'empty content', content: '   ' },
+        { id: 1, title: 'invalid id', content: 'invalid id' },
+      ],
+    } as any)
+
+    expect(settings.promptSnippets).toEqual([
+      {
+        id: 'snippet-a',
+        title: '常用风格提示词很长标',
+        content: 'cinematic light',
+      },
+    ])
+  })
+})
 
 describe('mergeImportedSettings', () => {
   it('replaces the default OpenAI profile with legacy imported settings when current settings are untouched', () => {
