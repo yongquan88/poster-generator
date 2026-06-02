@@ -48,7 +48,15 @@ describe('image size helpers', () => {
   })
 
   it('includes print poster presets sized by long edge', () => {
-    expect(POSTER_SIZE_PRESETS.map((preset) => preset.size)).toEqual(['1712x3840', '1504x3840', '1440x3840'])
+    expect(POSTER_SIZE_PRESETS.map((preset) => preset.size)).toEqual([
+      '1712x3840',
+      '1440x3840',
+      '1504x3840',
+      '2336x3504',
+      '1728x3840',
+      '2208x3680',
+      '1920x3840',
+    ])
     for (const preset of POSTER_SIZE_PRESETS) {
       expect(normalizeImageSize(preset.size)).toBe(preset.size)
       expectOfficialSize(preset.size)

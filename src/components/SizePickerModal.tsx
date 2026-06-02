@@ -49,7 +49,8 @@ function findPosterPresetForSize(size: string) {
 }
 
 export default function SizePickerModal({ currentSize, onSelect, onClose, allowAuto = true }: Props) {
-  usePreventBackgroundScroll(true)
+  const contentScrollRef = useRef<HTMLDivElement>(null)
+  usePreventBackgroundScroll(true, contentScrollRef)
 
   const currentPreset = findPresetForSize(currentSize)
   const currentPosterPreset = findPosterPresetForSize(currentSize)
@@ -208,7 +209,7 @@ export default function SizePickerModal({ currentSize, onSelect, onClose, allowA
             </button>
           </div>
 
-          <div className="h-[320px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-white/10 pr-1 -mr-1">
+          <div ref={contentScrollRef} className="h-[320px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-white/10 pr-1 -mr-1">
             {mode === 'auto' && (
               <div className="flex h-full animate-fade-in items-center justify-center pt-8 pb-4 text-center">
                 <div>
@@ -224,10 +225,10 @@ export default function SizePickerModal({ currentSize, onSelect, onClose, allowA
             )}
 
             {mode === 'poster' && (
-              <div className="space-y-4 animate-fade-in">
+              <div className="flex flex-col gap-4 animate-fade-in">
                 <section>
                   <div className="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">按实际印刷尺寸选择</div>
-                  <div className="grid gap-2">
+                  <div className="flex flex-col gap-2">
                     {POSTER_SIZE_PRESETS.map((item) => (
                       <button
                         key={item.size}

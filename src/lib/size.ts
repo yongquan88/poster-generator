@@ -168,13 +168,43 @@ export const POSTER_SIZE_PRESETS = [
     size: '1712x3840',
   },
   {
+    label: '60×160cm',
+    description: '3:8 竖版海报',
+    size: '1440x3840',
+  },
+  {
     label: '78×200cm',
     description: '39:100 竖版海报',
     size: '1504x3840',
   },
   {
-    label: '60×160cm',
-    description: '3:8 竖版海报',
-    size: '1440x3840',
+    label: '98×200cm',
+    description: '49:100 竖版海报',
+    size: '1888x3840',
+  },
+  {
+    label: '120×200cm',
+    description: '3:5 竖版海报',
+    size: '2208x3680',
+  },
+  {
+    label: '60×90cm',
+    description: '2:3 竖版海报',
+    size: '2336x3504',
+  },
+  {
+    label: '50×70cm',
+    description: '5:7 竖版海报',
+    size: '2400x3360',
+  },
+  {
+    label: '45×100cm',
+    description: '9:20 竖版海报',
+    size: '1728x3840',
+  },
+  {
+    label: '100×200cm',
+    description: '1:2 竖版海报',
+    size: '1920x3840',
   },
 ] as const
