@@ -306,7 +306,7 @@ async function callQiuqiuTokenImageApi(opts: CallApiOptions, profile: ApiProfile
       const formData = new FormData()
       formData.append('model', QIUQIU_TOKEN_IMAGE_MODEL)
       formData.append('prompt', opts.prompt)
-      formData.append('qmp_options', JSON.stringify(QIUQIU_TOKEN_QMP_OPTIONS))
+      // formData.append('qmp_options', JSON.stringify(QIUQIU_TOKEN_QMP_OPTIONS))
       formData.append('size', params.size)
       formData.append('quality', params.quality)
       formData.append('output_format', params.output_format)
