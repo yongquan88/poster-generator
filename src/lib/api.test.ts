@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { callImageApi } from './api'
+import { applySystemPrompt } from './systemPrompt'
+
+const EXPECTED_SYSTEM_PROMPT = applySystemPrompt({
+  ...DEFAULT_SETTINGS,
+  systemPrompt: 'system prompt',
+}, 'prompt')
 
 describe('callImageApi', () => {
   afterEach(() => {
@@ -26,6 +32,7 @@ describe('callImageApi', () => {
       await callImageApi({
         settings: {
           ...DEFAULT_SETTINGS,
+          systemPromptEnabled: false,
           apiKey: 'test-key',
           baseUrl: 'https://api.openai.com/v1',
           apiMode: 'responses',
@@ -57,7 +64,7 @@ describe('callImageApi', () => {
     }))
 
     const result = await callImageApi({
-      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key', codexCli: true },
+      settings: { ...DEFAULT_SETTINGS, systemPromptEnabled: false, apiKey: 'test-key', codexCli: true },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: [],
@@ -88,7 +95,7 @@ describe('callImageApi', () => {
     }))
 
     const result = await callImageApi({
-      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key', codexCli: true },
+      settings: { ...DEFAULT_SETTINGS, systemPromptEnabled: false, apiKey: 'test-key', codexCli: true },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: [],
@@ -194,6 +201,7 @@ describe('callImageApi', () => {
     await callImageApi({
       settings: {
         ...DEFAULT_SETTINGS,
+        systemPrompt: 'system prompt',
         apiKey: 'test-key',
         baseUrl: 'https://aitechflux.com/v1',
       },
@@ -214,7 +222,7 @@ describe('callImageApi', () => {
     })
     expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
       model: 'gpt-image-2',
-      prompt: 'prompt',
+      prompt: EXPECTED_SYSTEM_PROMPT,
       size: '1152x2048',
       quality: 'high',
       output_format: 'png',
@@ -235,6 +243,7 @@ describe('callImageApi', () => {
     await callImageApi({
       settings: {
         ...DEFAULT_SETTINGS,
+        systemPromptEnabled: false,
         apiKey: 'test-key',
         baseUrl: 'https://aitechflux.com/v1',
       },
@@ -272,6 +281,7 @@ describe('callImageApi', () => {
     await callImageApi({
       settings: {
         ...DEFAULT_SETTINGS,
+        systemPrompt: 'system prompt',
         apiKey: 'test-key',
         baseUrl: 'https://www.hfsyapi.cn/v1',
         model: 'ignored-model',
@@ -295,7 +305,7 @@ describe('callImageApi', () => {
       model: 'gpt-image-2pro',
       n: 2,
       size: '1712x3840',
-      prompt: 'prompt',
+      prompt: EXPECTED_SYSTEM_PROMPT,
       reference_images: ['data:image/png;base64,aW1hZ2U='],
       response_format: 'b64_json',
     })
@@ -312,6 +322,7 @@ describe('callImageApi', () => {
     await callImageApi({
       settings: {
         ...DEFAULT_SETTINGS,
+        systemPromptEnabled: false,
         apiKey: 'test-key',
         baseUrl: 'https://www.hfsyapi.cn/v1/',
         model: 'ignored-model',
@@ -381,6 +392,7 @@ describe('callImageApi', () => {
     await callImageApi({
       settings: {
         ...DEFAULT_SETTINGS,
+        systemPrompt: 'system prompt',
         apiKey: 'test-key',
         baseUrl: 'https://img.qiuqiutoken.com/v1/',
         model: 'ignored-model',
@@ -416,7 +428,7 @@ describe('callImageApi', () => {
     })
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
       model: 'gpt-image-2',
-      prompt: 'prompt',
+      prompt: EXPECTED_SYSTEM_PROMPT,
       qmp_options: {
         mode: 'async',
         persistence_mode: 'persisted',
@@ -644,7 +656,7 @@ describe('callImageApi', () => {
     expect(headers).not.toHaveProperty('Content-Type')
     expect(formData).toBeInstanceOf(FormData)
     expect(formData.get('model')).toBe('gpt-image-2')
-    expect(formData.get('prompt')).toBe('edit prompt')
+    expect(formData.get('prompt')).toBe(applySystemPrompt(DEFAULT_SETTINGS, 'edit prompt'))
     expect(formData.get('size')).toBe('1024x1024')
     expect(formData.get('quality')).toBe('medium')
     expect(formData.get('output_format')).toBe('png')
@@ -725,6 +737,55 @@ describe('callImageApi', () => {
       'http://api.example.com/v1/images/generations',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  it('resolves custom provider $prompt to the system-prefixed prompt', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        systemPrompt: 'system prompt',
+        model: 'model',
+        customProviders: [{
+          id: 'custom-sync',
+          name: 'Custom Sync',
+          template: 'http-image',
+          submit: {
+            path: 'images/generations',
+            method: 'POST',
+            contentType: 'json',
+            body: { model: '$profile.model', prompt: '$prompt' },
+            result: {
+              b64JsonPaths: ['data.*.b64_json'],
+            },
+          },
+        }],
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          id: 'profile-custom',
+          provider: 'custom-sync',
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+          model: 'model',
+        }],
+        activeProfileId: 'profile-custom',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      model: 'model',
+      prompt: EXPECTED_SYSTEM_PROMPT,
+    })
   })
 
   it('polls custom async tasks immediately and keeps polling after transient network errors', async () => {

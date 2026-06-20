@@ -15,6 +15,7 @@ import {
   DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_RESPONSES_MODEL,
   DEFAULT_SETTINGS,
+  DEFAULT_SYSTEM_PROMPT,
   findEquivalentApiProfile,
   getApiProviderLabel,
   getActiveApiProfile,
@@ -389,7 +390,7 @@ export default function SettingsModal() {
     useState(false);
   const [llmPromptTooltipVisible, setLlmPromptTooltipVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "general" | "prompts" | "api" | "data" | "about"
+    "general" | "systemPrompt" | "prompts" | "api" | "data" | "about"
   >("general");
   const [exportConfig, setExportConfig] = useState(true);
   const [exportTasks, setExportTasks] = useState(true);
@@ -1489,6 +1490,25 @@ export default function SettingsModal() {
                 API 配置
               </button>
               <button
+                onClick={() => setActiveTab("systemPrompt")}
+                className={`whitespace-nowrap flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl transition-colors ${activeTab === "systemPrompt" ? "bg-white dark:bg-white/[0.08] shadow-sm text-blue-600 dark:text-blue-400 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/[0.04]"}`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V6a2 2 0 012-2h5l5 5v9a2 2 0 01-2 2z"
+                  />
+                </svg>
+                系统提示词
+              </button>
+              <button
                 onClick={() => setActiveTab("prompts")}
                 className={`whitespace-nowrap flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl transition-colors ${activeTab === "prompts" ? "bg-white dark:bg-white/[0.08] shadow-sm text-blue-600 dark:text-blue-400 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/[0.04]"}`}
               >
@@ -1710,6 +1730,96 @@ export default function SettingsModal() {
                     >
                       开启后，即使任务成功生成，也会在任务卡片和详情页显示重试按钮。
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "systemPrompt" && (
+                <div className="space-y-5">
+                  <div>
+                    <div className="mb-1 flex items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                          系统提示词
+                        </h4>
+                        <p
+                          data-selectable-text
+                          className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-500"
+                        >
+                          开启后，提交任务时会自动拼接在主提示词前，用于统一海报设计与印刷业务要求。关闭后仅发送主输入框中的提示词。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          commitSettings({
+                            ...draft,
+                            systemPromptEnabled: !draft.systemPromptEnabled,
+                          })
+                        }
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${draft.systemPromptEnabled ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
+                        role="switch"
+                        aria-checked={draft.systemPromptEnabled}
+                        aria-label="启用系统提示词"
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${draft.systemPromptEnabled ? "translate-x-[18px]" : "translate-x-[2px]"}`}
+                        />
+                      </button>
+                    </div>
+                    <div className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs ${draft.systemPromptEnabled ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300" : "bg-gray-100 text-gray-500 dark:bg-white/[0.06] dark:text-gray-400"}`}>
+                      {draft.systemPromptEnabled ? "当前已启用" : "当前未启用，仍可编辑内容"}
+                    </div>
+                  </div>
+
+                  <label className="block">
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <span className="text-sm text-gray-600 dark:text-gray-300">
+                        提示词内容
+                      </span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {draft.systemPrompt.length} 字符
+                      </span>
+                    </div>
+                    <textarea
+                      value={draft.systemPrompt}
+                      onChange={(e) =>
+                        commitSettings({
+                          ...draft,
+                          systemPrompt: e.target.value,
+                        })
+                      }
+                      rows={14}
+                      className={`w-full resize-y rounded-xl border border-gray-200/70 bg-white/70 px-3 py-2 text-sm leading-relaxed text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50 ${draft.systemPromptEnabled ? "" : "opacity-70"}`}
+                      data-selectable-text
+                    />
+                  </label>
+
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        commitSettings({
+                          ...draft,
+                          systemPrompt: "",
+                        })
+                      }
+                      className="rounded-xl border border-gray-200/70 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.06]"
+                    >
+                      清空
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        commitSettings({
+                          ...draft,
+                          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+                        })
+                      }
+                      className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-600"
+                    >
+                      恢复默认
+                    </button>
                   </div>
                 </div>
               )}

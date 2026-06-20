@@ -83,6 +83,8 @@ export interface AppSettings {
   codexCli: boolean
   apiProxy: boolean
   customProviders: CustomProviderDefinition[]
+  systemPromptEnabled: boolean
+  systemPrompt: string
   promptSnippets: PromptSnippet[]
   providerOrder?: string[]
   clearInputAfterSubmit: boolean

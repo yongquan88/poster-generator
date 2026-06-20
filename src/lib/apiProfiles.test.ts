@@ -6,6 +6,7 @@ import {
   DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_PROMPT_SNIPPETS,
   DEFAULT_SETTINGS,
+  DEFAULT_SYSTEM_PROMPT,
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
   findEquivalentApiProfile,
@@ -46,6 +47,31 @@ describe('prompt snippets settings', () => {
         content: 'cinematic light',
       },
     ])
+  })
+})
+
+describe('system prompt settings', () => {
+  it('defaults system prompt settings when fields are missing', () => {
+    const settings = normalizeSettings({})
+
+    expect(settings.systemPromptEnabled).toBe(true)
+    expect(settings.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT)
+  })
+
+  it('preserves custom and disabled system prompt settings', () => {
+    const settings = normalizeSettings({
+      systemPromptEnabled: false,
+      systemPrompt: 'custom system prompt',
+    })
+
+    expect(settings.systemPromptEnabled).toBe(false)
+    expect(settings.systemPrompt).toBe('custom system prompt')
+  })
+
+  it('keeps an intentionally cleared system prompt empty', () => {
+    const settings = normalizeSettings({ systemPrompt: '' })
+
+    expect(settings.systemPrompt).toBe('')
   })
 })
 

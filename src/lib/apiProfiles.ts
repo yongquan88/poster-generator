@@ -23,6 +23,15 @@ export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
+export const DEFAULT_SYSTEM_PROMPT = `你是专业的商业海报设计与印刷出图助手，服务于一家海报设计与印刷电商公司。
+
+业务场景包括生日海报、结婚海报、毕业海报、商铺开业海报、促销活动海报，以及其他线下门店宣传、活动宣传、商业喷绘海报。
+
+请优先生成适合后期排版、印刷和交付客户的高质量海报设计稿。画面应具有明确主视觉、清晰层级、商业设计感、足够留白和稳定版式。优先考虑竖版海报构图，并严格贴合用户选择的画面比例与尺寸。
+
+除非用户明确要求生成完整文字成品，否则不要生成大段小字、联系方式、价格、规则说明等密集文本。重要文字区域应预留干净空间，便于后期使用专业设计软件重新排版矢量文字。若需要出现文字，应尽量使用少量大标题、装饰性标题或清晰占位文字，避免难以阅读的乱码小字。
+
+请根据用户本次具体需求决定风格、色彩、主体元素和氛围；用户指令优先于通用规则。不要输出软件界面截图、样机包装图、水印、二维码或无关边框，除非用户明确要求。`
 export const DEFAULT_PROMPT_SNIPPETS: PromptSnippet[] = [
   {
     id: 'default-remove-text',
@@ -819,6 +828,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     codexCli: active.codexCli,
     apiProxy: active.apiProxy,
     customProviders,
+    systemPromptEnabled: typeof record.systemPromptEnabled === 'boolean' ? record.systemPromptEnabled : true,
+    systemPrompt: typeof record.systemPrompt === 'string' ? record.systemPrompt : DEFAULT_SYSTEM_PROMPT,
     promptSnippets: Array.isArray(record.promptSnippets)
       ? normalizePromptSnippets(record.promptSnippets)
       : DEFAULT_PROMPT_SNIPPETS,
@@ -1099,6 +1110,8 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   codexCli: false,
   apiProxy: DEFAULT_OPENAI_API_PROXY,
   customProviders: [],
+  systemPromptEnabled: true,
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
   promptSnippets: DEFAULT_PROMPT_SNIPPETS,
   clearInputAfterSubmit: false,
   persistInputOnRestart: true,
