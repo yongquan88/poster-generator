@@ -370,7 +370,7 @@ describe('callImageApi', () => {
     })).rejects.toThrow('hfsyapi 当前流程不支持遮罩')
   })
 
-  it('uses qiuqiutoken generation JSON flow with GPT Image 2 fields', async () => {
+  it('uses the configured model in the qiuqiutoken generation JSON flow', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],
     }), {
@@ -383,12 +383,12 @@ describe('callImageApi', () => {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
         baseUrl: 'https://img.qiuqiutoken.com/v1/',
-        model: 'ignored-model',
+        model: 'configured-model',
         profiles: [{
           ...DEFAULT_SETTINGS.profiles[0],
           apiKey: 'test-key',
           baseUrl: 'https://img.qiuqiutoken.com/v1/',
-          model: 'ignored-model',
+          model: 'configured-model',
           responseFormatB64Json: true,
         }],
       },
@@ -415,7 +415,7 @@ describe('callImageApi', () => {
       'Content-Type': 'application/json',
     })
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
-      model: 'gpt-image-2',
+      model: 'configured-model',
       prompt: 'prompt',
       qmp_options: {
         mode: 'async',
@@ -610,12 +610,12 @@ describe('callImageApi', () => {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
         baseUrl: 'https://img.qiuqiutoken.com/v1',
-        model: 'ignored-model',
+        model: 'configured-edit-model',
         profiles: [{
           ...DEFAULT_SETTINGS.profiles[0],
           apiKey: 'test-key',
           baseUrl: 'https://img.qiuqiutoken.com/v1',
-          model: 'ignored-model',
+          model: 'configured-edit-model',
           responseFormatB64Json: true,
         }],
       },
@@ -643,7 +643,7 @@ describe('callImageApi', () => {
     expect(headers).toMatchObject({ Authorization: 'Bearer test-key' })
     expect(headers).not.toHaveProperty('Content-Type')
     expect(formData).toBeInstanceOf(FormData)
-    expect(formData.get('model')).toBe('gpt-image-2')
+    expect(formData.get('model')).toBe('configured-edit-model')
     expect(formData.get('prompt')).toBe('edit prompt')
     expect(formData.get('size')).toBe('1024x1024')
     expect(formData.get('quality')).toBe('medium')

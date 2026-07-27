@@ -18,7 +18,7 @@ import {
   normalizeBase64Image,
   pickActualParams,
 } from './imageApiShared'
-import { QIUQIU_TOKEN_IMAGE_MODEL, QIUQIU_TOKEN_QMP_OPTIONS, isQiuqiuTokenBaseUrl } from './qiuqiuToken'
+import { getQiuqiuTokenImageModel, QIUQIU_TOKEN_QMP_OPTIONS, isQiuqiuTokenBaseUrl } from './qiuqiuToken'
 
 const PROMPT_REWRITE_GUARD_PREFIX = 'Use the following text as the complete prompt. Do not rewrite it:'
 
@@ -291,6 +291,7 @@ async function callHfsyApiImageApi(opts: CallApiOptions, profile: ApiProfile): P
 async function callQiuqiuTokenImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   const { params, inputImageDataUrls } = opts
   const isEdit = inputImageDataUrls.length > 0
+  const model = getQiuqiuTokenImageModel(profile.model)
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
@@ -304,9 +305,9 @@ async function callQiuqiuTokenImageApi(opts: CallApiOptions, profile: ApiProfile
 
     if (isEdit) {
       const formData = new FormData()
-      formData.append('model', QIUQIU_TOKEN_IMAGE_MODEL)
+      formData.append('model', model)
       formData.append('prompt', opts.prompt)
-      // formData.append('qmp_options', JSON.stringify(QIUQIU_TOKEN_QMP_OPTIONS))
+      formData.append('qmp_options', JSON.stringify(QIUQIU_TOKEN_QMP_OPTIONS))
       formData.append('size', params.size)
       formData.append('quality', params.quality)
       formData.append('output_format', params.output_format)
@@ -347,7 +348,7 @@ async function callQiuqiuTokenImageApi(opts: CallApiOptions, profile: ApiProfile
       assertImageInputPayloadSize(inputImageDataUrls.reduce((sum, dataUrl) => sum + getDataUrlEncodedByteSize(dataUrl), 0))
 
       const body: Record<string, unknown> = {
-        model: QIUQIU_TOKEN_IMAGE_MODEL,
+        model,
         prompt: opts.prompt,
         qmp_options: QIUQIU_TOKEN_QMP_OPTIONS,
         size: params.size,
