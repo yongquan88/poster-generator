@@ -647,9 +647,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
-      if (profile.responseFormatB64Json) {
-        formData.append('response_format', 'b64_json')
-      }
+      formData.append('response_format', profile.responseFormatB64Json ? 'b64_json' : 'url')
 
       const imageBlobs: Blob[] = []
       for (let i = 0; i < inputImageDataUrls.length; i++) {
@@ -706,9 +704,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         body.n = params.n
       }
-      if (profile.responseFormatB64Json) {
-        body.response_format = 'b64_json'
-      }
+      body.response_format = profile.responseFormatB64Json ? 'b64_json' : 'url'
 
       response = await fetch(
         useLocalSdkProxy

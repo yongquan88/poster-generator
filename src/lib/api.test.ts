@@ -261,6 +261,122 @@ describe('callImageApi', () => {
     expect(images).toHaveLength(1)
   })
 
+  it('sends response_format: url by default on OpenAI-compatible image generation', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.jingai.cc/v1',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      response_format: 'url',
+    })
+  })
+
+  it('sends response_format: b64_json when the toggle is enabled on image generation', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.jingai.cc/v1',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.jingai.cc/v1',
+          responseFormatB64Json: true,
+        }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      response_format: 'b64_json',
+    })
+  })
+
+  it('sends response_format: url by default on image edits', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.jingai.cc/v1',
+      },
+      prompt: 'edit prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+    })
+
+    const editCall = fetchMock.mock.calls.find(([url]) => String(url).startsWith('https://img.jingai.cc/'))
+    const [, init] = editCall!
+    const formData = (init as RequestInit).body as FormData
+    expect(formData.get('response_format')).toBe('url')
+  })
+
+  it('sends response_format: b64_json on image edits when the toggle is enabled', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({
+        data: [{ b64_json: 'aW1hZ2U=' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        baseUrl: 'https://img.jingai.cc/v1',
+        profiles: [{
+          ...DEFAULT_SETTINGS.profiles[0],
+          apiKey: 'test-key',
+          baseUrl: 'https://img.jingai.cc/v1',
+          responseFormatB64Json: true,
+        }],
+      },
+      prompt: 'edit prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+    })
+
+    const editCall = fetchMock.mock.calls.find(([url]) => String(url).startsWith('https://img.jingai.cc/'))
+    const [, init] = editCall!
+    const formData = (init as RequestInit).body as FormData
+    expect(formData.get('response_format')).toBe('b64_json')
+  })
+
   it('uses hfsyapi generation JSON flow with fixed model and reference images', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],

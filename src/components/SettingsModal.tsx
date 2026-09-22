@@ -2489,11 +2489,15 @@ export default function SettingsModal() {
                         data-selectable-text
                         className="text-xs text-gray-500 dark:text-gray-500"
                       >
-                        开启后在请求体中追加{" "}
+                        开启后请求体发送{" "}
                         <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">
                           response_format: b64_json
                         </code>
-                        ，尝试使接口直接返回 Base64 编码的图片数据而非 URL。
+                        ，使接口返回 Base64 图片数据；关闭时发送{" "}
+                        <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">
+                          response_format: url
+                        </code>
+                        ，使接口返回图片 URL。
                       </div>
                     </div>
                   )}
