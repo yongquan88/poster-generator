@@ -1431,7 +1431,7 @@ export default function InputBar() {
       </label>
       {!isHfsyApiProvider && (
         <label
-          className="relative flex flex-col gap-0.5"
+          className="hidden relative flex-col gap-0.5"
           onMouseEnter={showQualityHint}
           onMouseLeave={hideQualityHint}
           onTouchStart={startQualityHintTouch}
@@ -1746,7 +1746,7 @@ export default function InputBar() {
           <div className="mt-3">
             {/* 桌面端布局 */}
             <div className="hidden sm:flex items-end justify-between gap-3">
-              {renderParams('grid-cols-6')}
+              {renderParams('grid-cols-3')}
 
               <div className="flex gap-2 flex-shrink-0 mb-0.5">
                 <div
@@ -1797,7 +1797,7 @@ export default function InputBar() {
             <div className="sm:hidden flex flex-col gap-2">
               <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
                 <div className="collapse-inner">
-                  {renderParams('grid-cols-2')}
+                  {renderParams('grid-cols-3')}
                   <div className="h-2" />
                 </div>
               </div>
