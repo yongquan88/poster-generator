@@ -258,7 +258,7 @@ async function callHfsyApiImageApi(opts: CallApiOptions, profile: ApiProfile): P
       size: params.size,
       prompt,
       reference_images: inputImageDataUrls,
-      response_format: 'b64_json',
+      ...(profile.sendResponseFormat !== false ? { response_format: 'b64_json' } : {}),
     }
 
     const response = await fetch(
@@ -647,7 +647,9 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
-      formData.append('response_format', profile.responseFormatB64Json ? 'b64_json' : 'url')
+      if (profile.sendResponseFormat !== false) {
+        formData.append('response_format', profile.responseFormatB64Json ? 'b64_json' : 'url')
+      }
 
       const imageBlobs: Blob[] = []
       for (let i = 0; i < inputImageDataUrls.length; i++) {
@@ -704,7 +706,9 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       if (params.n > 1) {
         body.n = params.n
       }
-      body.response_format = profile.responseFormatB64Json ? 'b64_json' : 'url'
+      if (profile.sendResponseFormat !== false) {
+        body.response_format = profile.responseFormatB64Json ? 'b64_json' : 'url'
+      }
 
       response = await fetch(
         useLocalSdkProxy
@@ -901,7 +905,9 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
   if (method !== 'GET') {
     if (contentType === 'multipart') {
       const formData = await createCustomMultipartBody(mapping, opts, context)
-      if (profile.responseFormatB64Json) {
+      if (profile.sendResponseFormat === false) {
+        formData.delete('response_format')
+      } else if (profile.responseFormatB64Json) {
         formData.append('response_format', 'b64_json')
       }
       body = formData
@@ -912,8 +918,12 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       )
       headers['Content-Type'] = 'application/json'
       const resolved = resolveTemplateValue(mapping.body ?? {}, context)
-      if (profile.responseFormatB64Json && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
-        (resolved as Record<string, unknown>).response_format = 'b64_json'
+      if (resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
+        if (profile.sendResponseFormat === false) {
+          delete (resolved as Record<string, unknown>).response_format
+        } else if (profile.responseFormatB64Json) {
+          (resolved as Record<string, unknown>).response_format = 'b64_json'
+        }
       }
       body = JSON.stringify(resolved)
     }

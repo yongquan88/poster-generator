@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
 import OpenAI, { toFile, type Uploadable } from 'openai'
 import { EnvHttpProxyAgent } from 'undici'
-import { normalizeDevProxyConfig } from './src/lib/devProxy'
+import { buildApiUrl, normalizeDevProxyConfig } from './src/lib/devProxy'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -45,7 +45,8 @@ function readAuthHeaders(req: IncomingMessage) {
   if (!apiKey) throw new Error('Missing Authorization bearer token')
   if (!baseURL) throw new Error('Missing x-openai-base-url header')
 
-  return { apiKey, baseURL }
+  // Match the browser's direct-request URL handling, including a missing /v1.
+  return { apiKey, baseURL: buildApiUrl(baseURL, '').replace(/\/+$/, '') }
 }
 
 function getHeaderValue(req: IncomingMessage, name: string) {
@@ -144,7 +145,9 @@ function getProxyErrorMessage(error: unknown) {
   const cause = 'cause' in error ? (error as { cause?: unknown }).cause : undefined
   const causeMessage = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : ''
   const message = causeMessage ? `${error.message}: ${causeMessage}` : error.message
-  return hasEnvProxy()
+  const isConnectionError = error instanceof OpenAI.APIConnectionError ||
+    (error instanceof TypeError && /fetch failed/i.test(error.message))
+  return hasEnvProxy() || !isConnectionError
     ? message
     : `${message}。本地 Node 代理未检测到 HTTPS_PROXY/HTTP_PROXY/ALL_PROXY；如果浏览器通过代理访问外网，请用例如 HTTPS_PROXY=http://127.0.0.1:7890 npm run dev 启动。`
 }

@@ -709,6 +709,9 @@ export default function SettingsModal() {
         !options.includeApiKey && options.useNewApiModel ? "{model}" : model,
       );
       if (profile.codexCli) url.searchParams.set("codexCli", "true");
+      if (profile.sendResponseFormat !== undefined) {
+        url.searchParams.set("sendResponseFormat", String(profile.sendResponseFormat));
+      }
 
       let result = url.toString();
       if (!options.includeApiKey) {
@@ -2462,6 +2465,36 @@ export default function SettingsModal() {
                     <div className="block">
                       <div className="mb-1.5 flex items-center justify-between">
                         <span className="block text-sm text-gray-600 dark:text-gray-300">
+                          发送 response_format 参数
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateActiveProfile(
+                              { sendResponseFormat: activeProfile.sendResponseFormat === false },
+                              true,
+                            )
+                          }
+                          className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.sendResponseFormat !== false ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
+                          role="switch"
+                          aria-checked={activeProfile.sendResponseFormat !== false}
+                          aria-label="发送 response_format 参数"
+                        >
+                          <span
+                            className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.sendResponseFormat !== false ? "translate-x-[14px]" : "translate-x-[2px]"}`}
+                          />
+                        </button>
+                      </div>
+                      <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                        默认开启，沿用当前接口的返回格式设置。关闭后请求体不发送此参数；OpenAI 官方 GPT Image 接口请关闭。
+                      </div>
+                    </div>
+                  )}
+
+                  {activeProviderIsOpenAICompatible && (
+                    <div className="block">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="block text-sm text-gray-600 dark:text-gray-300">
                           返回 Base64 图片数据
                         </span>
                         <button
@@ -2475,10 +2508,11 @@ export default function SettingsModal() {
                               true,
                             )
                           }
-                          className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.responseFormatB64Json ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
+                          className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${activeProfile.responseFormatB64Json ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"}`}
                           role="switch"
                           aria-checked={!!activeProfile.responseFormatB64Json}
                           aria-label="返回 Base64 图片数据"
+                          disabled={activeProfile.sendResponseFormat === false}
                         >
                           <span
                             className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.responseFormatB64Json ? "translate-x-[14px]" : "translate-x-[2px]"}`}
@@ -2489,7 +2523,7 @@ export default function SettingsModal() {
                         data-selectable-text
                         className="text-xs text-gray-500 dark:text-gray-500"
                       >
-                        开启后请求体发送{" "}
+                        仅在上方参数开关开启时生效。开启后请求体发送{" "}
                         <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">
                           response_format: b64_json
                         </code>
